@@ -1,0 +1,6 @@
+.claude/
+node_modules/
+main.js
+bun.lockb
+tests/e2e/vault/
+tests/e2e/minimalist-kanban-vault/
