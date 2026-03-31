@@ -20,7 +20,7 @@
     if (!el || !app) return;
     if (lastRenderedTitle === item.title) return;
     lastRenderedTitle = item.title;
-    el.innerHTML = "";
+    while (el.firstChild) el.removeChild(el.firstChild);
     await MarkdownRenderer.render(app, item.title, el, filePath, viewComponent);
     // Unwrap <p> tags for inline display — join with <br> to preserve line breaks
     const paragraphs = el.querySelectorAll("p");
@@ -32,8 +32,13 @@
       });
       el.replaceChildren(fragment);
     }
-    // Strip newlines adjacent to <br> to avoid double line breaks with pre-wrap
-    el.innerHTML = el.innerHTML.replace(/<br>\n/g, "<br>");
+    // Strip leading newlines from text nodes after <br> to avoid double breaks with pre-wrap
+    el.querySelectorAll("br").forEach((br) => {
+      const next = br.nextSibling;
+      if (next && next.nodeType === 3 && next.textContent) {
+        next.textContent = next.textContent.replace(/^\n/, "");
+      }
+    });
     // Make internal links clickable (Ctrl/Cmd+Click opens in new tab)
     el.querySelectorAll("a.internal-link").forEach((a) => {
       a.addEventListener("click", (e) => {

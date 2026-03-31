@@ -1,4 +1,4 @@
-import { Plugin, WorkspaceLeaf, TFile, MarkdownView } from "obsidian";
+import { Plugin, WorkspaceLeaf, TFile, MarkdownView, setIcon } from "obsidian";
 import { KanbanView, KANBAN_VIEW_TYPE } from "./KanbanView";
 import { KBSettingTab, DEFAULT_SETTINGS } from "./settings";
 import type { KBSettings } from "./settings";
@@ -6,7 +6,6 @@ import type { KBSettings } from "./settings";
 export default class KanbanBoardPlugin extends Plugin {
   settings: KBSettings = { ...DEFAULT_SETTINGS };
   private bypassRedirect = false;
-  private views = new Set<KanbanView>();
 
   async onload() {
     await this.loadSettings();
@@ -24,18 +23,17 @@ export default class KanbanBoardPlugin extends Plugin {
       id: "toggle-kanban-view",
       name: "Toggle Kanban/Markdown view",
       checkCallback: (checking) => {
-        const leaf = this.app.workspace.activeLeaf;
-        if (!leaf) return false;
-
-        if (leaf.view instanceof KanbanView) {
-          if (!checking) this.toggleView(leaf);
+        const kanbanView = this.app.workspace.getActiveViewOfType(KanbanView);
+        if (kanbanView) {
+          if (!checking) this.toggleView(kanbanView.leaf);
           return true;
         }
 
-        if (leaf.view instanceof MarkdownView) {
-          const file = leaf.view.file;
+        const mdView = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (mdView) {
+          const file = mdView.file;
           if (file && this.isKanbanFileSync(file.path)) {
-            if (!checking) this.toggleView(leaf);
+            if (!checking) this.toggleView(mdView.leaf);
             return true;
           }
         }
@@ -56,15 +54,11 @@ export default class KanbanBoardPlugin extends Plugin {
 
   async saveSettings() {
     await this.saveData(this.settings);
-    this.views.forEach((v) => v.onSettingsChanged());
-  }
-
-  registerKanbanView(view: KanbanView) {
-    this.views.add(view);
-  }
-
-  unregisterKanbanView(view: KanbanView) {
-    this.views.delete(view);
+    this.app.workspace.getLeavesOfType(KANBAN_VIEW_TYPE).forEach((leaf) => {
+      if (leaf.view instanceof KanbanView) {
+        leaf.view.onSettingsChanged();
+      }
+    });
   }
 
   private patchSetViewState() {
@@ -139,8 +133,7 @@ export default class KanbanBoardPlugin extends Plugin {
         cls: "view-action",
         attr: { "aria-label": "Switch to Kanban view", "data-kb-toggle": "1" },
       });
-      // columns-3 icon (same as kanban view icon)
-      btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="6" height="18" rx="1"/><rect x="9" y="3" width="6" height="12" rx="1"/><rect x="16" y="3" width="6" height="8" rx="1"/></svg>`;
+      setIcon(btn, "columns-3");
       btn.addEventListener("click", (e) => {
         e.preventDefault();
         this.toggleView(leaf);

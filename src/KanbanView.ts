@@ -14,7 +14,6 @@ export class KanbanView extends TextFileView {
   constructor(leaf: WorkspaceLeaf, plugin: KanbanBoardPlugin) {
     super(leaf);
     this.plugin = plugin;
-    this.plugin.registerKanbanView(this);
     this.addAction("file-text", "Toggle Markdown view", () => {
       this.plugin.toggleViewFromView(this);
     });
@@ -47,7 +46,6 @@ export class KanbanView extends TextFileView {
   }
 
   async onClose() {
-    this.plugin.unregisterKanbanView(this);
     this.destroyComponent();
   }
 
