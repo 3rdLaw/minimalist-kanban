@@ -285,6 +285,77 @@ test("toggle back to kanban view restores board", () => {
   assert.ok(cards.includes("Write tests"));
 });
 
+// ── Mobile: lanes stay within viewport ──────────────────
+
+test("mobile mode: lanes do not extend past board bottom", () => {
+  evaluate("app.emulateMobile(true)");
+  sleep(500);
+  // Reload plugin so mobile styles take effect on the view
+  cli("plugin:reload id=minimalist-kanban");
+  waitForDom(".kb-lane", "4", 8000);
+
+  const result = evaluate(
+    '(() => {' +
+    '  const board = document.querySelector(".kb-board");' +
+    '  const lanes = document.querySelectorAll(".kb-lane");' +
+    '  const boardRect = board.getBoundingClientRect();' +
+    '  let maxBottom = 0;' +
+    '  lanes.forEach(l => { const r = l.getBoundingClientRect(); if (r.bottom > maxBottom) maxBottom = r.bottom; });' +
+    '  return JSON.stringify({ laneBtm: Math.round(maxBottom), boardBtm: Math.round(boardRect.bottom) });' +
+    '})()'
+  );
+  const { laneBtm, boardBtm } = JSON.parse(result.replace(/^=> /, ""));
+  assert.ok(
+    laneBtm <= boardBtm,
+    `Lane bottom (${laneBtm}) should not exceed board bottom (${boardBtm})`
+  );
+
+  evaluate("app.emulateMobile(false)");
+  sleep(300);
+  cli("plugin:reload id=minimalist-kanban");
+  waitForDom(".kb-lane", "4", 8000);
+});
+
+// ── Auto-scroll on new card ─────────────────────────────
+
+test("adding cards scrolls the lane to show the new item", () => {
+  // Add several cards to the "To Do" lane to overflow it
+  for (let i = 0; i < 15; i++) {
+    evaluate([
+      'const ta = document.querySelectorAll(".kb-add-item-input")[0]',
+      `ta.value = 'Scroll test ${i}'`,
+      "ta.dispatchEvent(new Event('input', {bubbles:true}))",
+      "ta.dispatchEvent(new KeyboardEvent('keydown', {key:'Enter', bubbles:true}))",
+    ].join("; "));
+    sleep(150);
+  }
+
+  // Wait for the last card to appear
+  waitFor(
+    'dev:dom selector=".kb-item-title" text all',
+    (out) => out.includes("Scroll test 14"),
+    5000
+  );
+
+  // Check that the items container is scrolled to the bottom
+  const result = evaluate(
+    '(() => {' +
+    '  const items = document.querySelector(".kb-lane-items");' +
+    '  return JSON.stringify({' +
+    '    scrollTop: Math.round(items.scrollTop),' +
+    '    scrollHeight: items.scrollHeight,' +
+    '    clientHeight: items.clientHeight,' +
+    '    atBottom: items.scrollTop + items.clientHeight >= items.scrollHeight - 5' +
+    '  });' +
+    '})()'
+  );
+  const scroll = JSON.parse(result.replace(/^=> /, ""));
+  assert.ok(
+    scroll.atBottom,
+    `Lane should be scrolled to bottom after adding cards (scrollTop=${scroll.scrollTop}, scrollHeight=${scroll.scrollHeight}, clientHeight=${scroll.clientHeight})`
+  );
+});
+
 // ── Cleanup ─────────────────────────────────────────────
 
 cleanup();

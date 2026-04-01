@@ -3,7 +3,7 @@
   import { getSortable } from "./sortable";
   const Sortable = getSortable();
   import { Menu } from "obsidian";
-  import { createEventDispatcher, onMount } from "svelte";
+  import { createEventDispatcher, onMount, tick } from "svelte";
 
   export let lane;
   export let settings;
@@ -123,6 +123,11 @@
     if (!trimmed) return;
     dispatch("itemadd", { laneId: lane.id, title: trimmed });
     newItemTitle = "";
+    if (!settings.prependCards) {
+      tick().then(() => {
+        itemsEl.scrollTop = itemsEl.scrollHeight;
+      });
+    }
   }
 
   function handleAddKeydown(e) {

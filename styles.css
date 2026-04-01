@@ -278,12 +278,30 @@
   opacity: 0.5;
 }
 
-/* Mobile: prevent virtual keyboard from scrolling .kb-view out of position.
-   `clip` hides overflow like `hidden` but does NOT create a scroll container,
-   so the browser cannot implicitly scroll this element when an input is focused. */
+/* Mobile layout: use flex so the board gets a definite height from flex
+   layout (not percentage-based), which fixes max-height:100% resolution
+   on lanes in mobile WebKit.  Use `clip` (not `hidden`) for overflow so
+   no scroll container is created — this prevents the browser from
+   implicitly scrolling these elements when the virtual keyboard opens. */
 .is-mobile .kb-view {
+  display: flex;
+  flex-direction: column;
   overflow: clip;
   --input-radius: 2px;
+}
+
+.is-mobile .kb-board {
+  flex: 1 1 0;
+  height: auto;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: clip;
+}
+
+/* On phones Obsidian renders floating nav icons at the bottom of the
+   viewport.  Extra bottom padding keeps lane content above them. */
+.is-phone .kb-board {
+  padding-bottom: 48px;
 }
 
 .is-mobile .kb-item-edit,
