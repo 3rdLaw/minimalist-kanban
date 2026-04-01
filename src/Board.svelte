@@ -43,7 +43,35 @@
       },
     });
 
-    return () => laneSortable?.destroy();
+    // On mobile, the browser auto-scrolls ancestor elements when an input
+    // gets focus (to keep it visible above the virtual keyboard).  We can't
+    // control Obsidian's containers via CSS, so we walk up from .kb-view
+    // and reset any unwanted scrollTop after the browser finishes scrolling.
+    let cleanupMobile;
+    if (Platform.isMobile) {
+      const viewEl = boardEl.closest(".kb-view");
+
+      function resetAncestorScroll() {
+        let el = viewEl;
+        while (el) {
+          if (el.scrollTop !== 0) el.scrollTop = 0;
+          el = el.parentElement;
+        }
+      }
+
+      function onFocusIn() {
+        requestAnimationFrame(resetAncestorScroll);
+        setTimeout(resetAncestorScroll, 120);
+      }
+
+      boardEl.addEventListener("focusin", onFocusIn);
+      cleanupMobile = () => boardEl.removeEventListener("focusin", onFocusIn);
+    }
+
+    return () => {
+      laneSortable?.destroy();
+      cleanupMobile?.();
+    };
   });
 
   function save() {
