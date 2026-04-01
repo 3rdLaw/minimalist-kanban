@@ -1,4 +1,4 @@
-import { TextFileView, WorkspaceLeaf, MarkdownRenderer } from "obsidian";
+import { TextFileView, WorkspaceLeaf } from "obsidian";
 import type { Board } from "./types";
 import type KanbanBoardPlugin from "./main";
 import { parseBoard, serializeBoard } from "./parser";
@@ -14,8 +14,8 @@ export class KanbanView extends TextFileView {
   constructor(leaf: WorkspaceLeaf, plugin: KanbanBoardPlugin) {
     super(leaf);
     this.plugin = plugin;
-    this.addAction("file-text", "Toggle Markdown view", () => {
-      this.plugin.toggleViewFromView(this);
+    this.addAction("file-text", "Toggle markdown view", () => {
+      void this.plugin.toggleViewFromView(this);
     });
   }
 
@@ -45,7 +45,7 @@ export class KanbanView extends TextFileView {
     this.destroyComponent();
   }
 
-  async onClose() {
+  onClose() {
     this.destroyComponent();
   }
 

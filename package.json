@@ -1,29 +1,36 @@
 {
   "name": "minimalist-kanban",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Minimalist markdown-backed Kanban boards for Obsidian",
   "license": "MIT",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "node esbuild.config.mjs production",
+    "lint": "eslint src/",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "npx tsx tests/e2e/sanity.e2e.ts"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@eslint/json": "^0.14.0",
     "@sveltejs/vite-plugin-svelte": "^3.1.0",
     "@testing-library/jest-dom": "^6.6.0",
     "@testing-library/svelte": "^4.2.0",
     "@types/sortablejs": "^1.15.0",
+    "@typescript-eslint/parser": "^8.58.0",
     "builtin-modules": "^3.3.0",
     "esbuild": "^0.21.0",
     "esbuild-svelte": "^0.8.0",
+    "eslint": "^9.39.4",
+    "eslint-plugin-obsidianmd": "^0.1.9",
     "jsdom": "^24.0.0",
     "obsidian": "^1.7.2",
     "svelte": "^4.2.0",
     "svelte-preprocess": "^5.1.0",
     "typescript": "^5.4.0",
+    "typescript-eslint": "^8.58.0",
     "vitest": "^1.6.0"
   },
   "dependencies": {

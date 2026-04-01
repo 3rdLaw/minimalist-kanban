@@ -1,4 +1,4 @@
-import { Plugin, WorkspaceLeaf, TFile, MarkdownView, setIcon } from "obsidian";
+import { Plugin, WorkspaceLeaf, TFile, MarkdownView, setIcon, ViewState } from "obsidian";
 import { KanbanView, KANBAN_VIEW_TYPE } from "./KanbanView";
 import { KBSettingTab, DEFAULT_SETTINGS } from "./settings";
 import type { KBSettings } from "./settings";
@@ -15,17 +15,17 @@ export default class KanbanBoardPlugin extends Plugin {
 
     this.addCommand({
       id: "create-kanban-board",
-      name: "Create new Kanban board",
-      callback: () => this.createNewBoard(),
+      name: "Create new kanban board",
+      callback: () => { void this.createNewBoard(); },
     });
 
     this.addCommand({
       id: "toggle-kanban-view",
-      name: "Toggle Kanban/Markdown view",
+      name: "Toggle kanban/Markdown view",
       checkCallback: (checking) => {
         const kanbanView = this.app.workspace.getActiveViewOfType(KanbanView);
         if (kanbanView) {
-          if (!checking) this.toggleView(kanbanView.leaf);
+          if (!checking) void this.toggleView(kanbanView.leaf);
           return true;
         }
 
@@ -33,7 +33,7 @@ export default class KanbanBoardPlugin extends Plugin {
         if (mdView) {
           const file = mdView.file;
           if (file && this.isKanbanFileSync(file.path)) {
-            if (!checking) this.toggleView(mdView.leaf);
+            if (!checking) void this.toggleView(mdView.leaf);
             return true;
           }
         }
@@ -49,7 +49,8 @@ export default class KanbanBoardPlugin extends Plugin {
   }
 
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const saved = (await this.loadData()) as Partial<KBSettings> | undefined;
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
   }
 
   async saveSettings() {
@@ -62,36 +63,40 @@ export default class KanbanBoardPlugin extends Plugin {
   }
 
   private patchSetViewState() {
-    const plugin = this;
-    const proto = WorkspaceLeaf.prototype as any;
+    const isBypassed = () => this.bypassRedirect;
+    const checkIsKanban = (path: string) => this.checkIsKanban(path);
+
+    type SetViewStateFn = (viewState: ViewState, eState?: unknown) => Promise<void>;
+    const proto = WorkspaceLeaf.prototype as unknown as { setViewState: SetViewStateFn };
     const original = proto.setViewState;
 
     proto.setViewState = async function (
       this: WorkspaceLeaf,
-      state: any,
-      ...rest: any[]
-    ) {
+      state: ViewState,
+      eState?: unknown
+    ): Promise<void> {
       if (
-        !plugin.bypassRedirect &&
+        !isBypassed() &&
         state.type === "markdown" &&
         state.state?.file
       ) {
         // Don't redirect if already viewing this file as markdown
         // (e.g. toggling source/reading mode)
-        const currentFile = (this.view as any)?.file?.path;
+        const currentFile =
+          this.view instanceof MarkdownView ? this.view.file?.path : undefined;
         const alreadyMarkdown =
           this.view instanceof MarkdownView &&
           currentFile === state.state.file;
 
         if (!alreadyMarkdown) {
-          const isKanban = await plugin.checkIsKanban(state.state.file);
+          const isKanban = await checkIsKanban(state.state.file as string);
           if (isKanban) {
-            const newState = { ...state, type: KANBAN_VIEW_TYPE };
-            return original.call(this, newState, ...rest);
+            const newState: ViewState = { ...state, type: KANBAN_VIEW_TYPE };
+            return original.call(this, newState, eState);
           }
         }
       }
-      return original.call(this, state, ...rest);
+      return original.call(this, state, eState);
     };
 
     this.register(() => {
@@ -126,17 +131,17 @@ export default class KanbanBoardPlugin extends Plugin {
       if (!file || !this.isKanbanFileSync(file.path)) return;
 
       // Don't add if already present
-      const actions = (leaf.view as any).actionsEl as HTMLElement | undefined;
+      const actions = (leaf.view as unknown as { actionsEl?: HTMLElement }).actionsEl;
       if (!actions || actions.querySelector("[data-kb-toggle]")) return;
 
       const btn = actions.createEl("a", {
         cls: "view-action",
-        attr: { "aria-label": "Switch to Kanban view", "data-kb-toggle": "1" },
+        attr: { "aria-label": "Switch to kanban view", "data-kb-toggle": "1" },
       });
       setIcon(btn, "columns-3");
       btn.addEventListener("click", (e) => {
         e.preventDefault();
-        this.toggleView(leaf);
+        void this.toggleView(leaf);
       });
     });
   }
@@ -146,10 +151,13 @@ export default class KanbanBoardPlugin extends Plugin {
   }
 
   private async toggleView(leaf: WorkspaceLeaf) {
-    const file = (leaf.view as any).file as TFile | undefined;
+    const view = leaf.view;
+    const file = view instanceof KanbanView ? view.file
+      : view instanceof MarkdownView ? view.file
+      : undefined;
     if (!file) return;
 
-    const isKanban = leaf.view instanceof KanbanView;
+    const isKanban = view instanceof KanbanView;
 
     this.bypassRedirect = true;
     try {
