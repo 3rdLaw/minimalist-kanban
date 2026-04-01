@@ -276,6 +276,72 @@
     menu.showAtMouseEvent(event);
   }
 
+  // ── Archive lane actions ───────────────────────────────
+
+  function handleArchiveItemMenu(e) {
+    const { itemId, event } = e.detail;
+    const item = board.archive.find((i) => i.id === itemId);
+    if (!item) return;
+
+    const menu = new Menu();
+
+    menu.addItem((i) =>
+      i
+        .setTitle("Restore card")
+        .setIcon("archive-restore")
+        .onClick(() => {
+          board.archive = board.archive.filter((i) => i.id !== itemId);
+          if (board.lanes.length > 0) {
+            const target = board.lanes[board.lanes.length - 1];
+            target.items.push(item);
+          }
+          board = board;
+          save();
+        })
+    );
+
+    if (board.lanes.length > 1) {
+      menu.addItem((i) => {
+        i.setTitle("Restore to list").setIcon("arrow-right");
+        const addLaneItems = (target) => {
+          for (const targetLane of board.lanes) {
+            target.addItem((si) => {
+              si.setTitle(targetLane.title)
+                .setIcon("columns-3")
+                .onClick(() => {
+                  board.archive = board.archive.filter((i) => i.id !== itemId);
+                  targetLane.items.push(item);
+                  board = board;
+                  save();
+                });
+            });
+          }
+        };
+
+        if (Platform.isPhone) {
+          addLaneItems(menu);
+        } else {
+          addLaneItems(i.setSubmenu());
+        }
+      });
+    }
+
+    menu.addSeparator();
+
+    menu.addItem((i) =>
+      i
+        .setTitle("Delete card")
+        .setIcon("trash-2")
+        .onClick(() => {
+          board.archive = board.archive.filter((i) => i.id !== itemId);
+          board = board;
+          save();
+        })
+    );
+
+    menu.showAtMouseEvent(event);
+  }
+
   // ── New note from card ─────────────────────────────────
 
   async function newNoteFromCard(lane, item) {
@@ -336,6 +402,32 @@
       on:itemshowmenu={handleItemShowMenu}
     />
   {/each}
+  {#if settings.showArchive && board.archive.length > 0}
+    <div class="kb-lane kb-archive-lane">
+      <div class="kb-lane-header">
+        <svg class="kb-archive-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>
+        <h3 class="kb-lane-title" style="cursor: default;">Archive</h3>
+        <span class="kb-lane-count">{board.archive.length}</span>
+      </div>
+      <div class="kb-lane-items">
+        {#each board.archive as item (item.id)}
+          <div class="kb-item kb-archive-item" data-id={item.id}>
+            <span class="kb-item-title">{item.title}</span>
+            <!-- svelte-ignore a11y-click-events-have-key-events -->
+            <button
+              class="kb-menu-btn"
+              on:click={(e) => handleArchiveItemMenu({ detail: { itemId: item.id, event: e } })}
+              on:mousedown|stopPropagation
+              on:touchstart|stopPropagation
+              aria-label="Card menu"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+            </button>
+          </div>
+        {/each}
+      </div>
+    </div>
+  {/if}
   <div class="kb-add-lane">
     <button class="kb-add-lane-btn" on:click={addLane}>+ Add List</button>
   </div>

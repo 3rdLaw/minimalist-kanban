@@ -32,7 +32,7 @@ function cli(cmd: string, retries = 2): string {
       const stderr = err.stderr?.toString().trim() ?? "";
       const stdout = err.stdout?.toString().trim() ?? "";
       // Retry on Flatpak/systemd transient crashes
-      if (attempt < retries && stderr.includes("event_origin_changed")) {
+      if (attempt < retries && (stderr.includes("event_origin_changed") || stderr.includes("zypak-helper"))) {
         sleep(300);
         continue;
       }

@@ -256,14 +256,33 @@
   color: var(--text-normal);
 }
 
+/* Archive lane */
+
+.kb-archive-lane {
+  opacity: 0.7;
+}
+
+.kb-archive-icon {
+  opacity: 0.5;
+  flex-shrink: 0;
+  margin-left: 2px;
+}
+
+.kb-archive-item {
+  cursor: default;
+}
+
 /* Mobile: always show menu buttons */
 .is-mobile .kb-menu-btn,
 .is-phone .kb-menu-btn {
   opacity: 0.5;
 }
 
-/* Mobile: reduce input border-radius to prevent content clipping */
+/* Mobile: prevent virtual keyboard from scrolling .kb-view out of position.
+   `clip` hides overflow like `hidden` but does NOT create a scroll container,
+   so the browser cannot implicitly scroll this element when an input is focused. */
 .is-mobile .kb-view {
+  overflow: clip;
   --input-radius: 2px;
 }
 

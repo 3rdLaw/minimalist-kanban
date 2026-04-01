@@ -5,12 +5,14 @@ export interface KBSettings {
   showCheckboxes: boolean;
   enterNewline: boolean;
   prependCards: boolean;
+  showArchive: boolean;
 }
 
 export const DEFAULT_SETTINGS: KBSettings = {
   showCheckboxes: false,
   enterNewline: false,
   prependCards: false,
+  showArchive: false,
 };
 
 export class KBSettingTab extends PluginSettingTab {
@@ -64,6 +66,20 @@ export class KBSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.prependCards)
           .onChange(async (value) => {
             this.plugin.settings.prependCards = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Show archive list")
+      .setDesc(
+        "Display the archive list on boards that have archived cards."
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.showArchive)
+          .onChange(async (value) => {
+            this.plugin.settings.showArchive = value;
             await this.plugin.saveSettings();
           })
       );
