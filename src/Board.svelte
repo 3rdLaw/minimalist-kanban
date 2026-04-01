@@ -65,7 +65,45 @@
       }
 
       boardEl.addEventListener("focusin", onFocusIn);
-      cleanupMobile = () => boardEl.removeEventListener("focusin", onFocusIn);
+
+      // ── DEBUG OVERLAY ──────────────────────────────────
+      const dbg = document.createElement("div");
+      dbg.style.cssText =
+        "position:fixed;top:0;left:0;right:0;z-index:999999;" +
+        "background:rgba(0,0,0,0.85);color:#0f0;font:12px/1.4 monospace;" +
+        "padding:8px;max-height:45vh;overflow-y:auto;pointer-events:none;";
+      document.body.appendChild(dbg);
+
+      function updateDebug() {
+        const vv = window.visualViewport;
+        const lines = [
+          `innerH: ${window.innerHeight}  innerW: ${window.innerWidth}`,
+          `visualVP: ${vv ? `${Math.round(vv.height)}×${Math.round(vv.width)} top:${Math.round(vv.offsetTop)}` : "N/A"}`,
+          "",
+        ];
+        let el = boardEl;
+        while (el && el !== document.documentElement) {
+          const cs = getComputedStyle(el);
+          const cls = el.className?.split?.(" ")?.filter(c => c.startsWith("kb-") || c.startsWith("workspace") || c.startsWith("view-") || c.startsWith("mod-") || c.startsWith("is-"))?. slice(0, 3)?.join(" ") || el.tagName;
+          lines.push(
+            `${cls}` +
+            `  h:${el.offsetHeight} sT:${el.scrollTop} sH:${el.scrollHeight}` +
+            `  ov:${cs.overflow} pos:${cs.position}`
+          );
+          el = el.parentElement;
+        }
+        dbg.textContent = lines.join("\n");
+      }
+
+      const debugInterval = setInterval(updateDebug, 300);
+      updateDebug();
+
+      cleanupMobile = () => {
+        boardEl.removeEventListener("focusin", onFocusIn);
+        clearInterval(debugInterval);
+        dbg.remove();
+      };
+      // ── END DEBUG ──────────────────────────────────────
     }
 
     return () => {
