@@ -99,9 +99,10 @@
         if (Platform.isMobile) {
           // On mobile, the keyboard triggers a delayed container resize.
           // Wait for it to settle, then scroll the card into view.
-          setTimeout(() => {
-            editInput.closest(".kb-item")?.scrollIntoView({ block: "nearest" });
-          }, 400);
+          // Fire twice — the resize timing varies by device.
+          const card = editInput.closest(".kb-item");
+          setTimeout(() => card?.scrollIntoView({ block: "nearest" }), 500);
+          setTimeout(() => card?.scrollIntoView({ block: "nearest" }), 1000);
         }
       }
     }, 0);
