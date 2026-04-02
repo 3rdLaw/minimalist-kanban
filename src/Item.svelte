@@ -1,5 +1,5 @@
 <script>
-  import { MarkdownRenderer } from "obsidian";
+  import { MarkdownRenderer, Platform } from "obsidian";
   import { createEventDispatcher, afterUpdate, onMount, tick } from "svelte";
 
   export let item;
@@ -96,6 +96,13 @@
         autoResize(editInput);
         editInput.focus();
         editInput.select();
+        if (Platform.isMobile) {
+          // On mobile, the keyboard triggers a delayed container resize.
+          // Wait for it to settle, then scroll the card into view.
+          setTimeout(() => {
+            editInput.closest(".kb-item")?.scrollIntoView({ block: "nearest" });
+          }, 400);
+        }
       }
     }, 0);
   }

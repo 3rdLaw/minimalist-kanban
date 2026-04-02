@@ -303,7 +303,7 @@
 /* On phones Obsidian renders floating nav icons at the bottom of the
    viewport.  Extra bottom padding keeps lane content above them. */
 .is-phone .kb-board {
-  padding-bottom: 48px;
+  padding-bottom: 64px;
 }
 
 .is-mobile .kb-item-edit,
