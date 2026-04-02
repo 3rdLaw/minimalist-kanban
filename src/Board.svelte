@@ -65,43 +65,7 @@
       }
 
       boardEl.addEventListener("focusin", onFocusIn);
-
-      // ── DEBUG OVERLAY ──────────────────────────────────
-      const dbg = document.createElement("div");
-      dbg.style.cssText =
-        "position:fixed;top:0;left:0;right:0;z-index:999999;" +
-        "background:rgba(0,0,0,0.85);color:#0f0;font:11px/1.3 monospace;" +
-        "padding:6px;max-height:40vh;overflow-y:auto;pointer-events:none;" +
-        "white-space:pre-wrap;";
-      document.body.appendChild(dbg);
-
-      function updateDebug() {
-        const vv = window.visualViewport;
-        const focused = document.activeElement;
-        const focusTag = focused ? `${focused.tagName}.${[...focused.classList].slice(0,2).join(".")}` : "none";
-        const boardRect = boardEl.getBoundingClientRect();
-        const viewRect = viewEl.getBoundingClientRect();
-        const lines = [
-          `win: iH=${window.innerHeight} sY=${window.scrollY} scrH=${screen.height}`,
-          `vvp: ${vv ? `h=${Math.round(vv.height)} w=${Math.round(vv.width)} oT=${Math.round(vv.offsetTop)} scale=${vv.scale}` : "N/A"}`,
-          `vkbd: ${"virtualKeyboard" in navigator ? "avail" : "N/A"}`,
-          `focus: ${focusTag}`,
-          `board rect: t=${Math.round(boardRect.top)} b=${Math.round(boardRect.bottom)} h=${Math.round(boardRect.height)}`,
-          `view rect: t=${Math.round(viewRect.top)} b=${Math.round(viewRect.bottom)} h=${Math.round(viewRect.height)}`,
-          `body sT=${document.body.scrollTop} html sT=${document.documentElement.scrollTop}`,
-        ];
-        dbg.textContent = lines.join("\n");
-      }
-
-      const debugInterval = setInterval(updateDebug, 300);
-      updateDebug();
-
-      cleanupMobile = () => {
-        boardEl.removeEventListener("focusin", onFocusIn);
-        clearInterval(debugInterval);
-        dbg.remove();
-      };
-      // ── END DEBUG ──────────────────────────────────────
+      cleanupMobile = () => boardEl.removeEventListener("focusin", onFocusIn);
     }
 
     return () => {
