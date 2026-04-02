@@ -70,28 +70,25 @@
       const dbg = document.createElement("div");
       dbg.style.cssText =
         "position:fixed;top:0;left:0;right:0;z-index:999999;" +
-        "background:rgba(0,0,0,0.85);color:#0f0;font:12px/1.4 monospace;" +
-        "padding:8px;max-height:45vh;overflow-y:auto;pointer-events:none;";
+        "background:rgba(0,0,0,0.85);color:#0f0;font:11px/1.3 monospace;" +
+        "padding:6px;max-height:40vh;overflow-y:auto;pointer-events:none;";
       document.body.appendChild(dbg);
 
       function updateDebug() {
         const vv = window.visualViewport;
+        const focused = document.activeElement;
+        const focusTag = focused ? `${focused.tagName}.${[...focused.classList].slice(0,2).join(".")}` : "none";
+        const boardRect = boardEl.getBoundingClientRect();
+        const viewRect = viewEl.getBoundingClientRect();
         const lines = [
-          `innerH: ${window.innerHeight}  innerW: ${window.innerWidth}`,
-          `visualVP: ${vv ? `${Math.round(vv.height)}×${Math.round(vv.width)} top:${Math.round(vv.offsetTop)}` : "N/A"}`,
-          "",
+          `win: iH=${window.innerHeight} sY=${window.scrollY} scrH=${screen.height}`,
+          `vvp: ${vv ? `h=${Math.round(vv.height)} w=${Math.round(vv.width)} oT=${Math.round(vv.offsetTop)} scale=${vv.scale}` : "N/A"}`,
+          `vkbd: ${"virtualKeyboard" in navigator ? "avail" : "N/A"}`,
+          `focus: ${focusTag}`,
+          `board rect: t=${Math.round(boardRect.top)} b=${Math.round(boardRect.bottom)} h=${Math.round(boardRect.height)}`,
+          `view rect: t=${Math.round(viewRect.top)} b=${Math.round(viewRect.bottom)} h=${Math.round(viewRect.height)}`,
+          `body sT=${document.body.scrollTop} html sT=${document.documentElement.scrollTop}`,
         ];
-        let el = boardEl;
-        while (el && el !== document.documentElement) {
-          const cs = getComputedStyle(el);
-          const cls = el.className?.split?.(" ")?.filter(c => c.startsWith("kb-") || c.startsWith("workspace") || c.startsWith("view-") || c.startsWith("mod-") || c.startsWith("is-"))?. slice(0, 3)?.join(" ") || el.tagName;
-          lines.push(
-            `${cls}` +
-            `  h:${el.offsetHeight} sT:${el.scrollTop} sH:${el.scrollHeight}` +
-            `  ov:${cs.overflow} pos:${cs.position}`
-          );
-          el = el.parentElement;
-        }
         dbg.textContent = lines.join("\n");
       }
 
