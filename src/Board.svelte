@@ -71,7 +71,8 @@
       dbg.style.cssText =
         "position:fixed;top:0;left:0;right:0;z-index:999999;" +
         "background:rgba(0,0,0,0.85);color:#0f0;font:11px/1.3 monospace;" +
-        "padding:6px;max-height:40vh;overflow-y:auto;pointer-events:none;";
+        "padding:6px;max-height:40vh;overflow-y:auto;pointer-events:none;" +
+        "white-space:pre-wrap;";
       document.body.appendChild(dbg);
 
       function updateDebug() {

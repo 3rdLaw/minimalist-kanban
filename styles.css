@@ -278,22 +278,24 @@
   opacity: 0.5;
 }
 
-/* Mobile layout: use flex so the board gets a definite height from flex
-   layout (not percentage-based), which fixes max-height:100% resolution
-   on lanes in mobile WebKit.  Use `clip` (not `hidden`) for overflow so
-   no scroll container is created — this prevents the browser from
-   implicitly scrolling these elements when the virtual keyboard opens. */
+/* Mobile layout: Obsidian resizes .view-content when the virtual keyboard
+   opens, but its display mode can vary.  Absolute positioning makes the
+   board reliably fill the view-content area regardless of display type.
+   Use `clip` (not `hidden`) so no scroll container is created — prevents
+   the browser from implicitly scrolling ancestors when an input is focused. */
 .is-mobile .kb-view {
-  display: flex;
-  flex-direction: column;
+  position: relative;
   overflow: clip;
   --input-radius: 2px;
 }
 
 .is-mobile .kb-board {
-  flex: 1 1 0;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   height: auto;
-  min-height: 0;
   overflow-x: auto;
   overflow-y: clip;
 }
