@@ -76,3 +76,9 @@ npm run test:e2e
      - `styles.css`
 
 Obsidian's community plugin infrastructure picks up the release automatically once the tag and manifest version match.
+
+##### Temporary notes for myself
+Until it's hosted, I do the following to load the files on desktop:
+~/vault-the-first/.obsidian/plugins/minimalist-kanban$ cp ~/code/minimalist-kanban/{main.js,manifest.json,styles.css} .
+Then click refresh icon near community plugins, ensure the new version number appears, then toggle the plugin on/off on desktop.
+Repeat later on mobile too, unfortunately.
