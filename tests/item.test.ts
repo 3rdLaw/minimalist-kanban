@@ -6,6 +6,7 @@ const defaultSettings = {
   showCheckboxes: false,
   enterNewline: false,
   prependCards: false,
+  showArchive: false,
 };
 
 const mockApp = {};

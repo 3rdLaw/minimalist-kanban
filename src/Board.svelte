@@ -313,20 +313,24 @@
 
     const menu = new Menu();
 
-    menu.addItem((i) =>
-      i
-        .setTitle("Restore card")
-        .setIcon("archive-restore")
-        .onClick(() => {
-          board.archive = board.archive.filter((i) => i.id !== itemId);
-          if (board.lanes.length > 0) {
+    if (board.lanes.length > 0) {
+      menu.addItem((i) =>
+        i
+          .setTitle("Restore card")
+          .setIcon("archive-restore")
+          .onClick(() => {
+            board.archive = board.archive.filter((i) => i.id !== itemId);
             const target = board.lanes[board.lanes.length - 1];
-            target.items.push(item);
-          }
-          board = board;
-          save();
-        })
-    );
+            if (settings.prependCards) {
+              target.items.unshift(item);
+            } else {
+              target.items.push(item);
+            }
+            board = board;
+            save();
+          })
+      );
+    }
 
     if (board.lanes.length > 1) {
       menu.addItem((i) => {
@@ -338,7 +342,11 @@
                 .setIcon("columns-3")
                 .onClick(() => {
                   board.archive = board.archive.filter((i) => i.id !== itemId);
-                  targetLane.items.push(item);
+                  if (settings.prependCards) {
+                    targetLane.items.unshift(item);
+                  } else {
+                    targetLane.items.push(item);
+                  }
                   board = board;
                   save();
                 });

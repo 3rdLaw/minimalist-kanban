@@ -8,6 +8,7 @@ const defaultSettings = {
   showCheckboxes: false,
   enterNewline: false,
   prependCards: false,
+  showArchive: false,
 };
 
 function makeLane(overrides = {}) {

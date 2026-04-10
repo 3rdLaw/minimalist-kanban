@@ -9,6 +9,7 @@ const defaultSettings = {
   showCheckboxes: false,
   enterNewline: false,
   prependCards: false,
+  showArchive: false,
 };
 
 function makeApp() {
@@ -447,5 +448,230 @@ describe("Board drag and drop", () => {
       expect(s.options.delay).toBe(150);
       expect(s.options.delayOnTouchOnly).toBe(true);
     });
+  });
+});
+
+// ── Archive lane ────────────────────────────────────────
+
+describe("Archive lane", () => {
+  const archivedItems = [
+    { id: "a1", title: "Archived A", checked: false, hasCheckbox: false },
+    { id: "a2", title: "Archived B", checked: false, hasCheckbox: false },
+  ];
+
+  function openArchiveMenu(container: HTMLElement, index = 0) {
+    const archiveLane = container.querySelector(".kb-archive-lane")!;
+    const menuBtns = archiveLane.querySelectorAll(".kb-menu-btn");
+    const before = Menu.instances.length;
+    fireEvent.click(menuBtns[index]);
+    return Menu.instances[before];
+  }
+
+  test("hidden when showArchive is false", () => {
+    const { container } = renderBoard({ archive: archivedItems });
+    expect(container.querySelector(".kb-archive-lane")).toBeNull();
+  });
+
+  test("hidden when archive is empty", () => {
+    const { container } = renderBoard({ archive: [] }, { showArchive: true });
+    expect(container.querySelector(".kb-archive-lane")).toBeNull();
+  });
+
+  test("visible when showArchive is true and archive has items", () => {
+    const { container } = renderBoard(
+      { archive: archivedItems },
+      { showArchive: true }
+    );
+    const lane = container.querySelector(".kb-archive-lane");
+    expect(lane).toBeTruthy();
+    expect(lane!.querySelectorAll(".kb-item")).toHaveLength(2);
+  });
+
+  test("shows item count badge", () => {
+    const { container } = renderBoard(
+      { archive: archivedItems },
+      { showArchive: true }
+    );
+    const count = container.querySelector(".kb-archive-lane .kb-lane-count");
+    expect(count!.textContent).toBe("2");
+  });
+
+  test("restore card moves item to last lane (append)", async () => {
+    const { container, onChange } = renderBoard(
+      { archive: [...archivedItems] },
+      { showArchive: true }
+    );
+    const menu = await openArchiveMenu(container);
+    menu.findItem("Restore card")!._onClick!();
+
+    const updated = onChange.mock.calls[0][0] as BoardType;
+    expect(updated.archive).toHaveLength(1);
+    const lastLane = updated.lanes[updated.lanes.length - 1];
+    expect(lastLane.items[lastLane.items.length - 1].title).toBe("Archived A");
+  });
+
+  test("restore card respects prependCards setting", async () => {
+    const { container, onChange } = renderBoard(
+      { archive: [...archivedItems] },
+      { showArchive: true, prependCards: true }
+    );
+    const menu = await openArchiveMenu(container);
+    menu.findItem("Restore card")!._onClick!();
+
+    const updated = onChange.mock.calls[0][0] as BoardType;
+    const lastLane = updated.lanes[updated.lanes.length - 1];
+    expect(lastLane.items[0].title).toBe("Archived A");
+  });
+
+  test("restore to list moves item to chosen lane", async () => {
+    const { container, onChange } = renderBoard(
+      { archive: [...archivedItems] },
+      { showArchive: true }
+    );
+    const menu = await openArchiveMenu(container);
+    const restoreToList = menu.findItem("Restore to list")!;
+    const subItems = restoreToList._submenu!.items.filter(
+      (i): i is InstanceType<typeof import("./mocks/obsidian").MenuItem> =>
+        "_title" in i
+    );
+    // Restore to first lane ("To Do")
+    subItems[0]._onClick!();
+
+    const updated = onChange.mock.calls[0][0] as BoardType;
+    expect(updated.archive).toHaveLength(1);
+    expect(updated.lanes[0].items[updated.lanes[0].items.length - 1].title).toBe("Archived A");
+  });
+
+  test("restore to list respects prependCards setting", async () => {
+    const { container, onChange } = renderBoard(
+      { archive: [...archivedItems] },
+      { showArchive: true, prependCards: true }
+    );
+    const menu = await openArchiveMenu(container);
+    const restoreToList = menu.findItem("Restore to list")!;
+    const subItems = restoreToList._submenu!.items.filter(
+      (i): i is InstanceType<typeof import("./mocks/obsidian").MenuItem> =>
+        "_title" in i
+    );
+    subItems[0]._onClick!();
+
+    const updated = onChange.mock.calls[0][0] as BoardType;
+    expect(updated.lanes[0].items[0].title).toBe("Archived A");
+  });
+
+  test("delete from archive removes item permanently", async () => {
+    const { container, onChange } = renderBoard(
+      { archive: [...archivedItems] },
+      { showArchive: true }
+    );
+    const menu = await openArchiveMenu(container);
+    menu.findItem("Delete card")!._onClick!();
+
+    const updated = onChange.mock.calls[0][0] as BoardType;
+    expect(updated.archive).toHaveLength(1);
+    expect(updated.archive[0].title).toBe("Archived B");
+  });
+
+  test("no restore options when board has zero lanes", async () => {
+    const { container } = renderBoard(
+      { lanes: [], archive: [...archivedItems] },
+      { showArchive: true }
+    );
+    const menu = await openArchiveMenu(container);
+    expect(menu.findItem("Restore card")).toBeUndefined();
+    expect(menu.findItem("Restore to list")).toBeUndefined();
+    // Delete should still be available
+    expect(menu.findItem("Delete card")).toBeTruthy();
+  });
+
+  test("no restore-to-list when board has only one lane", async () => {
+    const { container } = renderBoard(
+      {
+        lanes: [{ id: "lane-1", title: "Only", items: [] }],
+        archive: [...archivedItems],
+      },
+      { showArchive: true }
+    );
+    const menu = await openArchiveMenu(container);
+    expect(menu.findItem("Restore card")).toBeTruthy();
+    expect(menu.findItem("Restore to list")).toBeUndefined();
+  });
+
+  test("archive card from lane menu moves item to archive", async () => {
+    const { container, onChange } = renderBoard();
+    const menuBtns = container.querySelectorAll(".kb-item .kb-menu-btn");
+    const before = Menu.instances.length;
+    await fireEvent.click(menuBtns[0]);
+    const menu = Menu.instances[before];
+    menu.findItem("Archive card")!._onClick!();
+
+    const updated = onChange.mock.calls[0][0] as BoardType;
+    expect(updated.lanes[0].items).toHaveLength(1);
+    expect(updated.archive).toHaveLength(1);
+    expect(updated.archive[0].title).toBe("Task A");
+  });
+
+  test("mobile flattens restore-to-list submenu", async () => {
+    Platform.isPhone = true;
+    const { container } = renderBoard(
+      { archive: [...archivedItems] },
+      { showArchive: true }
+    );
+    const menu = await openArchiveMenu(container);
+    const restoreItem = menu.findItem("Restore to list")!;
+    expect(restoreItem._submenu).toBeNull();
+
+    // Lane titles added directly to main menu
+    const mainItems = menu.items.filter(
+      (i): i is InstanceType<typeof import("./mocks/obsidian").MenuItem> =>
+        "_title" in i
+    );
+    const laneItems = mainItems.filter(
+      (i) => i._title === "To Do" || i._title === "Done"
+    );
+    expect(laneItems).toHaveLength(2);
+    Platform.isPhone = false;
+  });
+});
+
+// ── Lane title editing ──────────────────────────────────
+
+describe("Lane title editing", () => {
+  test("clicking lane title enters edit mode", async () => {
+    const { container } = renderBoard();
+    const title = container.querySelector(".kb-lane-title")!;
+    await fireEvent.click(title);
+
+    await new Promise((r) => setTimeout(r, 10));
+    expect(container.querySelector(".kb-lane-title-input")).toBeTruthy();
+  });
+
+  test("Enter key finishes lane title edit", async () => {
+    const { container, onChange } = renderBoard();
+    const title = container.querySelector(".kb-lane-title")!;
+    await fireEvent.click(title);
+    await new Promise((r) => setTimeout(r, 10));
+
+    const input = container.querySelector(".kb-lane-title-input")! as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: "Renamed" } });
+    await fireEvent.keyDown(input, { key: "Enter" });
+    await fireEvent.blur(input);
+
+    expect(onChange).toHaveBeenCalled();
+    const updated = onChange.mock.calls[0][0] as BoardType;
+    expect(updated.lanes[0].title).toBe("Renamed");
+  });
+
+  test("Escape key cancels lane title edit", async () => {
+    const { container, onChange } = renderBoard();
+    const title = container.querySelector(".kb-lane-title")!;
+    await fireEvent.click(title);
+    await new Promise((r) => setTimeout(r, 10));
+
+    const input = container.querySelector(".kb-lane-title-input")!;
+    await fireEvent.keyDown(input, { key: "Escape" });
+
+    // Should exit edit mode without saving
+    expect(container.querySelector(".kb-lane-title-input")).toBeNull();
   });
 });
