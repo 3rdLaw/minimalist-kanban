@@ -310,3 +310,12 @@
 .is-mobile .kb-add-item-input {
   border-radius: var(--input-radius);
 }
+
+/* Link suggest popup */
+
+.kb-link-suggest {
+  z-index: var(--layer-popover, 300);
+  max-height: 250px;
+  overflow-y: auto;
+  min-width: 200px;
+}

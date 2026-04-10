@@ -356,6 +356,118 @@ test("adding cards scrolls the lane to show the new item", () => {
   );
 });
 
+// ── Link suggest ───────────────────────────────────────
+
+test("link suggest: [[ triggers file autocomplete in card edit", () => {
+  // Create a target note for the suggest to find
+  cli(`create name="Link Target" content="# Important Section\\nSome content"`);
+  sleep(1000);
+
+  // Click the "Write tests" card to enter edit mode
+  evaluate([
+    "const t = [...document.querySelectorAll('.kb-item-title')].find(e => e.textContent.trim() === 'Write tests')",
+    "t.click()",
+  ].join("; "));
+  waitFor('dev:dom selector=".kb-item-edit" total', (o) => o.includes("1"), 3000);
+
+  // Type [[Link to trigger file suggestions
+  evaluate([
+    "const ta = document.querySelector('.kb-item-edit')",
+    "ta.value = '[[Link'",
+    "ta.selectionStart = 6",
+    "ta.selectionEnd = 6",
+    "ta.dispatchEvent(new Event('input', {bubbles:true}))",
+  ].join("; "));
+  sleep(500);
+
+  // Verify suggest popup shows "Link Target"
+  const suggestText = domTextAll(".kb-link-suggest .suggestion-title");
+  assert.ok(
+    suggestText.includes("Link Target"),
+    `Expected "Link Target" in suggest: ${suggestText}`
+  );
+
+  // Press Enter to accept the suggestion
+  evaluate(
+    "document.querySelector('.kb-item-edit').dispatchEvent(new KeyboardEvent('keydown', {key:'Enter', bubbles:true}))"
+  );
+  sleep(300);
+
+  // Verify textarea contains [[Link Target]]
+  const result = evaluate(
+    "JSON.stringify(document.querySelector('.kb-item-edit').value)"
+  );
+  const value = JSON.parse(result.replace(/^=> /, ""));
+  assert.ok(
+    value.includes("[[Link Target]]"),
+    `Expected [[Link Target]] in value: ${value}`
+  );
+
+  // Verify suggest popup is hidden
+  const display = evaluate(
+    "document.querySelector('.kb-link-suggest').style.display"
+  );
+  assert.ok(display.includes("none"), "Suggest should be hidden after accept");
+
+  // Escape to cancel edit without saving
+  evaluate(
+    "document.querySelector('.kb-item-edit').dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true}))"
+  );
+  sleep(200);
+});
+
+test("link suggest: # shows heading autocomplete", () => {
+  // Use the board file itself — its ## headings are already indexed
+  // Click "Write tests" to enter edit mode
+  evaluate([
+    "const t = [...document.querySelectorAll('.kb-item-title')].find(e => e.textContent.trim() === 'Write tests')",
+    "t.click()",
+  ].join("; "));
+  waitFor('dev:dom selector=".kb-item-edit" total', (o) => o.includes("1"), 3000);
+
+  // Type [[Link Target# to trigger heading suggestions for that note
+  evaluate([
+    "const ta = document.querySelector('.kb-item-edit')",
+    "ta.value = '[[Link Target#'",
+    "ta.selectionStart = 14",
+    "ta.selectionEnd = 14",
+    "ta.dispatchEvent(new Event('input', {bubbles:true}))",
+  ].join("; "));
+  sleep(500);
+
+  // Verify heading suggestions appear
+  const headings = domTextAll(".kb-link-suggest .suggestion-title");
+  assert.ok(
+    headings.includes("Important Section"),
+    `Expected "Important Section" in headings: ${headings}`
+  );
+
+  // Press Enter to accept
+  evaluate(
+    "document.querySelector('.kb-item-edit').dispatchEvent(new KeyboardEvent('keydown', {key:'Enter', bubbles:true}))"
+  );
+  sleep(300);
+
+  // Verify textarea contains the heading link
+  const result = evaluate(
+    "JSON.stringify(document.querySelector('.kb-item-edit').value)"
+  );
+  const value = JSON.parse(result.replace(/^=> /, ""));
+  assert.ok(
+    value.includes("[[Link Target#Important Section]]"),
+    `Expected heading link in value: ${value}`
+  );
+
+  // Escape to cancel edit
+  evaluate(
+    "document.querySelector('.kb-item-edit').dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true}))"
+  );
+  sleep(200);
+
+  // Clean up the helper note
+  try { cli('delete path="Link Target.md" permanent'); } catch {}
+});
+
 // ── Cleanup ─────────────────────────────────────────────
 
 cleanup();

@@ -4,6 +4,7 @@
   const Sortable = getSortable();
   import { Menu } from "obsidian";
   import { createEventDispatcher, onMount, tick } from "svelte";
+  import { LinkSuggest } from "./LinkSuggest";
 
   export let lane;
   export let settings;
@@ -20,6 +21,8 @@
   let editingTitle = false;
   let titleInput;
   let newItemTitle = "";
+  let addCardInput;
+  let linkSuggest;
 
   onMount(() => {
     sortableInstance = new Sortable(itemsEl, {
@@ -55,7 +58,13 @@
       },
     });
 
-    return () => sortableInstance?.destroy();
+    linkSuggest = new LinkSuggest(app, filePath);
+    if (addCardInput) linkSuggest.attach(addCardInput);
+
+    return () => {
+      sortableInstance?.destroy();
+      linkSuggest?.destroy();
+    };
   });
 
   function startEditTitle() {
@@ -123,6 +132,7 @@
     if (!trimmed) return;
     dispatch("itemadd", { laneId: lane.id, title: trimmed });
     newItemTitle = "";
+    linkSuggest?.close();
     if (!settings.prependCards) {
       tick().then(() => {
         itemsEl.scrollTop = itemsEl.scrollHeight;
@@ -132,6 +142,8 @@
 
   function handleAddKeydown(e) {
     if (e.isComposing) return;
+    if (linkSuggest?.handleKeydown(e)) return;
+
     const isSubmit = settings.enterNewline
       ? e.key === "Enter" && e.shiftKey
       : e.key === "Enter" && !e.shiftKey;
@@ -197,6 +209,7 @@
 
   <div class="kb-lane-footer">
     <textarea
+      bind:this={addCardInput}
       bind:value={newItemTitle}
       on:keydown={handleAddKeydown}
       placeholder="+ Add a card"

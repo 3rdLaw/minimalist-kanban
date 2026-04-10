@@ -1,6 +1,7 @@
 <script>
   import { MarkdownRenderer, Platform } from "obsidian";
   import { createEventDispatcher, afterUpdate, onMount, tick } from "svelte";
+  import { LinkSuggest } from "./LinkSuggest";
 
   export let item;
   export let settings;
@@ -15,6 +16,7 @@
   let editInput;
   let titleEl;
   let lastRenderedTitle = "";
+  let linkSuggest;
 
   async function renderMarkdown(el) {
     if (!el || !app) return;
@@ -96,6 +98,8 @@
         autoResize(editInput);
         editInput.focus();
         editInput.select();
+        linkSuggest = new LinkSuggest(app, filePath);
+        linkSuggest.attach(editInput);
         if (Platform.isMobile) {
           // On mobile, the keyboard triggers a delayed container resize.
           // Wait for it to settle, then scroll the card into view.
@@ -111,6 +115,8 @@
   function finishEdit() {
     if (!editing) return;
     editing = false;
+    linkSuggest?.destroy();
+    linkSuggest = null;
     const trimmed = editValue.trim();
     if (trimmed && trimmed !== item.title) {
       dispatch("edit", { itemId: item.id, title: trimmed });
@@ -119,6 +125,8 @@
 
   function handleKeydown(e) {
     if (e.isComposing) return;
+    if (linkSuggest?.handleKeydown(e)) return;
+
     const isSubmit = settings.enterNewline
       ? e.key === "Enter" && e.shiftKey
       : e.key === "Enter" && !e.shiftKey;
@@ -127,6 +135,8 @@
       e.preventDefault();
       editInput?.blur();
     } else if (e.key === "Escape") {
+      linkSuggest?.destroy();
+      linkSuggest = null;
       editing = false;
     }
   }
