@@ -4,6 +4,10 @@ A lightweight Kanban board plugin for [Obsidian](https://obsidian.md). Boards ar
 
 Inspired by the [Kanban](https://github.com/mgmeyers/obsidian-kanban) plugin. Minimalist Kanban aims to be a simpler, smaller alternative that covers the core workflow: lists, cards, drag-and-drop, and nothing else.
 
+
+<img width="949" height="776" alt="image" src="https://github.com/user-attachments/assets/fd54b84c-dba3-4f01-b3ef-3707b2341632" />
+
+
 ## What it looks like
 
 A board file is just Markdown with `## ` headings as lists and `- [ ]` items as cards:
