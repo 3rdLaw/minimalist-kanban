@@ -30,7 +30,6 @@ export class LinkSuggest {
 
     this.containerEl = document.createElement("div");
     this.containerEl.className = "suggestion-container kb-link-suggest";
-    this.containerEl.style.display = "none";
 
     this.boundOnInput = () => this.onInput();
   }
@@ -237,7 +236,7 @@ export class LinkSuggest {
     });
 
     this.position();
-    this.containerEl.style.display = "";
+    this.containerEl.classList.add("is-active");
   }
 
   private position(): void {
@@ -245,18 +244,21 @@ export class LinkSuggest {
     const rect = this.textarea.getBoundingClientRect();
     const spaceBelow = window.innerHeight - rect.bottom;
 
-    this.containerEl.style.position = "fixed";
-    this.containerEl.style.left = rect.left + "px";
-    this.containerEl.style.width = Math.max(rect.width, 220) + "px";
+    const props: Record<string, string> = {
+      "--kb-suggest-left": rect.left + "px",
+      "--kb-suggest-width": Math.max(rect.width, 220) + "px",
+    };
 
     if (spaceBelow >= 200 || spaceBelow >= rect.top) {
-      this.containerEl.style.top = rect.bottom + 2 + "px";
-      this.containerEl.style.bottom = "";
+      props["--kb-suggest-top"] = rect.bottom + 2 + "px";
+      props["--kb-suggest-bottom"] = "auto";
     } else {
-      this.containerEl.style.bottom =
+      props["--kb-suggest-top"] = "auto";
+      props["--kb-suggest-bottom"] =
         window.innerHeight - rect.top + 2 + "px";
-      this.containerEl.style.top = "";
     }
+
+    this.containerEl.setCssProps(props);
   }
 
   private setSelected(index: number): void {
@@ -309,7 +311,7 @@ export class LinkSuggest {
 
   close(): void {
     this.isShowing = false;
-    this.containerEl.style.display = "none";
+    this.containerEl.classList.remove("is-active");
     this.suggestions = [];
   }
 }

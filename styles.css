@@ -314,8 +314,18 @@
 /* Link suggest popup */
 
 .kb-link-suggest {
+  display: none;
+  position: fixed;
   z-index: var(--layer-popover, 300);
   max-height: 250px;
   overflow-y: auto;
   min-width: 200px;
+  left: var(--kb-suggest-left, 0);
+  top: var(--kb-suggest-top, auto);
+  bottom: var(--kb-suggest-bottom, auto);
+  width: var(--kb-suggest-width, 220px);
+}
+
+.kb-link-suggest.is-active {
+  display: block;
 }

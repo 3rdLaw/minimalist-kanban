@@ -403,11 +403,11 @@ test("link suggest: [[ triggers file autocomplete in card edit", () => {
     `Expected [[Link Target]] in value: ${value}`
   );
 
-  // Verify suggest popup is hidden
-  const display = evaluate(
-    "document.querySelector('.kb-link-suggest').style.display"
+  // Verify suggest popup is hidden (no is-active class)
+  const hasActive = evaluate(
+    "document.querySelector('.kb-link-suggest').classList.contains('is-active')"
   );
-  assert.ok(display.includes("none"), "Suggest should be hidden after accept");
+  assert.ok(hasActive.includes("false"), "Suggest should not have is-active class after accept");
 
   // Escape to cancel edit without saving
   evaluate(
