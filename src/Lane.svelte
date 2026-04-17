@@ -19,6 +19,7 @@
   let itemsEl;
   let sortableInstance;
   let editingTitle = false;
+  let titleDraft = "";
   let titleInput;
   let newItemTitle = "";
   let addCardInput;
@@ -68,6 +69,7 @@
   });
 
   function startEditTitle() {
+    titleDraft = lane.title;
     editingTitle = true;
     setTimeout(() => titleInput?.focus(), 0);
   }
@@ -75,8 +77,8 @@
   function finishEditTitle() {
     if (!editingTitle) return;
     editingTitle = false;
-    const trimmed = lane.title.trim();
-    if (trimmed) {
+    const trimmed = titleDraft.trim();
+    if (trimmed && trimmed !== lane.title) {
       dispatch("lanerename", { laneId: lane.id, title: trimmed });
     }
   }
@@ -176,7 +178,7 @@
     {#if editingTitle}
       <input
         bind:this={titleInput}
-        bind:value={lane.title}
+        bind:value={titleDraft}
         on:blur={finishEditTitle}
         on:keydown={handleTitleKeydown}
         class="kb-lane-title-input"

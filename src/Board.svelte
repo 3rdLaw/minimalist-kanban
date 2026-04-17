@@ -2,8 +2,9 @@
   import Lane from "./Lane.svelte";
   import { getSortable } from "./sortable";
   const Sortable = getSortable();
-  import { Menu, Platform, TFile } from "obsidian";
+  import { Menu, Platform } from "obsidian";
   import { onMount } from "svelte";
+  import { generateId } from "./types";
 
   export let board;
   export let settings;
@@ -14,11 +15,6 @@
 
   let boardEl;
   let laneSortable;
-
-  let counter = 0;
-  function genId() {
-    return "kb-" + Date.now().toString(36) + "-" + (counter++).toString(36);
-  }
 
   onMount(() => {
     laneSortable = new Sortable(boardEl, {
@@ -79,7 +75,7 @@
   }
 
   function addLane() {
-    board.lanes.push({ id: genId(), title: "New List", items: [] });
+    board.lanes.push({ id: generateId(), title: "New List", items: [] });
     board = board;
     save();
   }
@@ -127,7 +123,7 @@
     const lane = board.lanes.find((l) => l.id === e.detail.laneId);
     if (lane) {
       const newItem = {
-        id: genId(),
+        id: generateId(),
         title: e.detail.title,
         checked: false,
         hasCheckbox: true,
@@ -204,7 +200,7 @@
         .setIcon("copy")
         .onClick(() => {
           const idx = lane.items.indexOf(item);
-          const clone = { ...item, id: genId() };
+          const clone = { ...item, id: generateId() };
           lane.items.splice(idx + 1, 0, clone);
           board = board;
           save();

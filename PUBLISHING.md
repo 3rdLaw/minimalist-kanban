@@ -79,6 +79,8 @@ Obsidian's community plugin infrastructure picks up the release automatically on
 
 ##### Temporary notes for myself
 Until it's hosted, I do the following to load the files on desktop:
-~/vault-the-first/.obsidian/plugins/minimalist-kanban$ cp ~/code/minimalist-kanban/{main.js,manifest.json,styles.css} .
+```
+cd ~/vault-the-first/.obsidian/plugins/minimalist-kanban; cp ~/code/minimalist-kanban/{main.js,manifest.json,styles.css} .
+```
 Then click refresh icon near community plugins, ensure the new version number appears, then toggle the plugin on/off on desktop.
 Repeat later on mobile too, unfortunately.

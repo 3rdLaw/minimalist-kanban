@@ -1,7 +1,7 @@
 import esbuild from "esbuild";
 import esbuildSvelte from "esbuild-svelte";
 import sveltePreprocess from "svelte-preprocess";
-import builtins from "builtin-modules";
+import { builtinModules } from "module";
 import process from "process";
 
 const isProd = process.argv[2] === "production";
@@ -14,7 +14,7 @@ const context = await esbuild.context({
     "electron",
     "@codemirror/*",
     "node:*",
-    ...builtins,
+    ...builtinModules,
   ],
   format: "cjs",
   target: "es2018",

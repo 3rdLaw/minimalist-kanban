@@ -97,7 +97,12 @@
       if (editInput) {
         autoResize(editInput);
         editInput.focus();
-        editInput.select();
+        if (Platform.isMobile) {
+          const end = editInput.value.length;
+          editInput.setSelectionRange(end, end);
+        } else {
+          editInput.select();
+        }
         linkSuggest = new LinkSuggest(app, filePath);
         linkSuggest.attach(editInput);
         if (Platform.isMobile) {

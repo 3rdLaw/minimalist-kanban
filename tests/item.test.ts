@@ -1,5 +1,6 @@
 import { describe, test, expect, vi } from "vitest";
 import { render, fireEvent } from "@testing-library/svelte";
+import { Platform } from "obsidian";
 import Item from "../src/Item.svelte";
 
 const defaultSettings = {
@@ -222,5 +223,67 @@ describe("Item", () => {
     await fireEvent.blur(textarea);
 
     expect(handler).not.toHaveBeenCalled();
+  });
+
+  // ── Focus behavior on edit ────────────────────────────
+
+  test("selects all text on desktop when entering edit mode", async () => {
+    const { container } = renderItem({ title: "Hello world" });
+    await fireEvent.click(container.querySelector(".kb-item-title")!);
+    // Wait for setTimeout in startEdit
+    await new Promise((r) => setTimeout(r, 10));
+
+    const textarea = container.querySelector(".kb-item-edit")! as HTMLTextAreaElement;
+    expect(textarea.selectionStart).toBe(0);
+    expect(textarea.selectionEnd).toBe("Hello world".length);
+  });
+
+  // ── Checkbox toggle ───────────────────────────────────
+
+  test("toggling checkbox dispatches edit with new checked state", async () => {
+    const { container, component } = renderItem(
+      { hasCheckbox: true, checked: false },
+      { showCheckboxes: true }
+    );
+    const handler = vi.fn();
+    component.$on("edit", handler);
+
+    const checkbox = container.querySelector(".kb-item-checkbox")!;
+    await fireEvent.change(checkbox);
+
+    expect(handler).toHaveBeenCalled();
+    expect(handler.mock.calls[0][0].detail).toMatchObject({
+      itemId: "item-1",
+      title: "Test card",
+      checked: true,
+    });
+  });
+
+  test("unchecking a checked item dispatches edit with checked=false", async () => {
+    const { container, component } = renderItem(
+      { hasCheckbox: true, checked: true },
+      { showCheckboxes: true }
+    );
+    const handler = vi.fn();
+    component.$on("edit", handler);
+
+    await fireEvent.change(container.querySelector(".kb-item-checkbox")!);
+
+    expect(handler.mock.calls[0][0].detail.checked).toBe(false);
+  });
+
+  test("places cursor at end on mobile when entering edit mode", async () => {
+    Platform.isMobile = true;
+    try {
+      const { container } = renderItem({ title: "Hello world" });
+      await fireEvent.click(container.querySelector(".kb-item-title")!);
+      await new Promise((r) => setTimeout(r, 10));
+
+      const textarea = container.querySelector(".kb-item-edit")! as HTMLTextAreaElement;
+      expect(textarea.selectionStart).toBe("Hello world".length);
+      expect(textarea.selectionEnd).toBe("Hello world".length);
+    } finally {
+      Platform.isMobile = false;
+    }
   });
 });

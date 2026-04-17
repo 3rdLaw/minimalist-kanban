@@ -239,6 +239,43 @@ describe("Lane", () => {
     expect(menu.findItem("Move list right")).toBeFalsy();
   });
 
+  test("Move list left dispatches lanemove with direction -1", async () => {
+    const { container, component } = render(Lane, {
+      props: { lane: makeLane(), settings: defaultSettings, app: {}, viewComponent: null, filePath: "test.md", laneIndex: 1, laneCount: 3 },
+    });
+    const handler = vi.fn();
+    component.$on("lanemove", handler);
+
+    await fireEvent.click(
+      container.querySelector(".kb-lane-header .kb-menu-btn")!
+    );
+    Menu.instances[0].findItem("Move list left")!._onClick!();
+
+    expect(handler).toHaveBeenCalled();
+    expect(handler.mock.calls[0][0].detail).toEqual({
+      laneId: "lane-1",
+      direction: -1,
+    });
+  });
+
+  test("Move list right dispatches lanemove with direction +1", async () => {
+    const { container, component } = render(Lane, {
+      props: { lane: makeLane(), settings: defaultSettings, app: {}, viewComponent: null, filePath: "test.md", laneIndex: 0, laneCount: 3 },
+    });
+    const handler = vi.fn();
+    component.$on("lanemove", handler);
+
+    await fireEvent.click(
+      container.querySelector(".kb-lane-header .kb-menu-btn")!
+    );
+    Menu.instances[0].findItem("Move list right")!._onClick!();
+
+    expect(handler.mock.calls[0][0].detail).toEqual({
+      laneId: "lane-1",
+      direction: 1,
+    });
+  });
+
   test("single lane has no move options", async () => {
     const { container } = render(Lane, {
       props: { lane: makeLane(), settings: defaultSettings, app: {}, viewComponent: null, filePath: "test.md", laneIndex: 0, laneCount: 1 },

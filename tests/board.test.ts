@@ -303,6 +303,133 @@ describe("Board card menu", () => {
   });
 });
 
+// ── New note from card: filename sanitization ──────────
+
+describe("newNoteFromCard filename sanitization", () => {
+  async function triggerNewNote(cardTitle: string, filePath = "Kanban.md") {
+    const app = makeApp();
+    const onChange = vi.fn();
+    const { container } = render(Board, {
+      props: {
+        board: {
+          lanes: [
+            {
+              id: "lane-1",
+              title: "L",
+              items: [{ id: "i1", title: cardTitle, checked: false, hasCheckbox: false }],
+            },
+          ],
+          archive: [],
+        },
+        settings: defaultSettings,
+        app,
+        viewComponent: null,
+        filePath,
+        onChange,
+      },
+    });
+
+    const menuBtns = container.querySelectorAll(".kb-item .kb-menu-btn");
+    const before = Menu.instances.length;
+    await fireEvent.click(menuBtns[0]);
+    const menu = Menu.instances[before];
+    await menu.findItem("New note from card")!._onClick!();
+    await new Promise((r) => setTimeout(r, 10));
+    return app;
+  }
+
+  test("uses only the first line of a multi-line title", async () => {
+    const app = await triggerNewNote("First line\nSecond line");
+    expect(app.vault.create.mock.calls[0][0]).toBe("First line.md");
+  });
+
+  test("extracts text from wikilinks", async () => {
+    const app = await triggerNewNote("See [[My Note]]");
+    expect(app.vault.create.mock.calls[0][0]).toBe("See My Note.md");
+  });
+
+  test("uses display text from piped wikilinks", async () => {
+    const app = await triggerNewNote("Ref [[target|Display Name]]");
+    // Sanitization strips everything between [[ and | (keeping only the target)
+    expect(app.vault.create.mock.calls[0][0]).toBe("Ref target.md");
+  });
+
+  test("extracts text from embeds", async () => {
+    const app = await triggerNewNote("![[Embedded]]");
+    expect(app.vault.create.mock.calls[0][0]).toBe("Embedded.md");
+  });
+
+  test("extracts text from markdown links", async () => {
+    const app = await triggerNewNote("Check [this link](https://example.com)");
+    expect(app.vault.create.mock.calls[0][0]).toBe("Check this link.md");
+  });
+
+  test("strips # from hashtags", async () => {
+    const app = await triggerNewNote("Task with #urgent tag");
+    expect(app.vault.create.mock.calls[0][0]).toBe("Task with urgent tag.md");
+  });
+
+  test("removes filesystem-illegal characters", async () => {
+    const app = await triggerNewNote('Bad: chars / and \\ and * "quoted" <x>|');
+    const path = app.vault.create.mock.calls[0][0] as string;
+    expect(path).not.toMatch(/[\\/:*?"<>|]/);
+    expect(path).toContain("Bad chars");
+  });
+
+  test("collapses whitespace", async () => {
+    const app = await triggerNewNote("Too    many     spaces");
+    expect(app.vault.create.mock.calls[0][0]).toBe("Too many spaces.md");
+  });
+
+  test("falls back to 'Untitled' for empty sanitized titles", async () => {
+    const app = await triggerNewNote("///***");
+    expect(app.vault.create.mock.calls[0][0]).toBe("Untitled.md");
+  });
+
+  test("places note in same folder as kanban file", async () => {
+    const app = await triggerNewNote("My Card", "deep/folder/Kanban.md");
+    expect(app.vault.create.mock.calls[0][0]).toBe("deep/folder/My Card.md");
+  });
+
+  test("appends counter when filename already exists", async () => {
+    const app = makeApp();
+    // First lookup returns a truthy value (collision), second returns null
+    let callCount = 0;
+    app.vault.getAbstractFileByPath = vi.fn(() => {
+      callCount++;
+      return callCount === 1 ? ({ path: "Existing.md" } as any) : null;
+    });
+
+    const { container } = render(Board, {
+      props: {
+        board: {
+          lanes: [
+            {
+              id: "lane-1",
+              title: "L",
+              items: [{ id: "i1", title: "Existing", checked: false, hasCheckbox: false }],
+            },
+          ],
+          archive: [],
+        },
+        settings: defaultSettings,
+        app,
+        viewComponent: null,
+        filePath: "Kanban.md",
+        onChange: vi.fn(),
+      },
+    });
+
+    const menuBtns = container.querySelectorAll(".kb-item .kb-menu-btn");
+    await fireEvent.click(menuBtns[0]);
+    const menu = Menu.instances[Menu.instances.length - 1];
+    await menu.findItem("New note from card")!._onClick!();
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(app.vault.create).toHaveBeenCalledWith("Existing 1.md", "");
+  });
+});
+
 // ── Mobile behavior ──────────────────────────────────────
 
 describe("Board mobile behavior", () => {
@@ -673,5 +800,37 @@ describe("Lane title editing", () => {
 
     // Should exit edit mode without saving
     expect(container.querySelector(".kb-lane-title-input")).toBeNull();
+  });
+
+  test("Escape after typing does not mutate lane.title", async () => {
+    const board = makeBoard();
+    const originalTitle = board.lanes[0].title;
+    const onChange = vi.fn();
+    const { container } = render(Board, {
+      props: {
+        board,
+        settings: defaultSettings,
+        app: makeApp(),
+        viewComponent: null,
+        filePath: "boards/test.md",
+        onChange,
+      },
+    });
+
+    await fireEvent.click(container.querySelector(".kb-lane-title")!);
+    await new Promise((r) => setTimeout(r, 10));
+
+    const input = container.querySelector(".kb-lane-title-input")! as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: "Garbage typed input" } });
+    await fireEvent.keyDown(input, { key: "Escape" });
+
+    // Original title preserved in board state
+    expect(board.lanes[0].title).toBe(originalTitle);
+    // No save fired
+    expect(onChange).not.toHaveBeenCalled();
+    // Display reflects original title, not the typed draft
+    await new Promise((r) => setTimeout(r, 10));
+    const titleEl = container.querySelector(".kb-lane-title");
+    expect(titleEl?.textContent).toBe(originalTitle);
   });
 });
