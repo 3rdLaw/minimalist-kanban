@@ -45,8 +45,9 @@ export class KanbanView extends TextFileView {
     this.destroyComponent();
   }
 
-  async onClose(): Promise<void> {
+  onClose(): Promise<void> {
     this.destroyComponent();
+    return Promise.resolve();
   }
 
   onSettingsChanged() {

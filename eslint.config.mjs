@@ -15,6 +15,7 @@ export default defineConfig([
     rules: {
       "obsidianmd/sample-names": "off",
       "obsidianmd/no-sample-code": "off",
+      "require-await": "error",
     },
   },
   {
