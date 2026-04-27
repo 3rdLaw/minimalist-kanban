@@ -1,7 +1,7 @@
 import { describe, test, expect, vi, beforeEach } from "vitest";
 import { render, fireEvent } from "@testing-library/svelte";
 import Board from "../src/Board.svelte";
-import { Menu, Platform } from "obsidian";
+import { Menu, Notice, Platform } from "obsidian";
 import SortableMock from "./mocks/sortablejs";
 import type { Board as BoardType } from "../src/types";
 
@@ -832,5 +832,130 @@ describe("Lane title editing", () => {
     await new Promise((r) => setTimeout(r, 10));
     const titleEl = container.querySelector(".kb-lane-title");
     expect(titleEl?.textContent).toBe(originalTitle);
+  });
+});
+
+// ── Undo toast ──────────────────────────────────────────
+
+describe("Undo toast", () => {
+  async function openCardMenu(container: HTMLElement, itemIndex = 0) {
+    const menuBtns = container.querySelectorAll(".kb-item .kb-menu-btn");
+    const before = Menu.instances.length;
+    await fireEvent.click(menuBtns[itemIndex]);
+    return Menu.instances[before];
+  }
+
+  function latestNotice() {
+    return Notice.instances[Notice.instances.length - 1];
+  }
+
+  test("delete card shows undo toast with Undo button", async () => {
+    const { container } = renderBoard();
+    const menu = await openCardMenu(container, 0);
+    menu.findItem("Delete card")!._onClick!();
+
+    const notice = latestNotice();
+    expect(notice).toBeTruthy();
+    expect(notice.noticeEl.textContent).toContain("Card deleted");
+    expect(notice.noticeEl.querySelector(".kb-undo-btn")).toBeTruthy();
+  });
+
+  test("clicking Undo restores the deleted card", async () => {
+    const { container, onChange } = renderBoard();
+    const menu = await openCardMenu(container, 0);
+    menu.findItem("Delete card")!._onClick!();
+
+    // The board reflects the deletion
+    let updated = onChange.mock.calls[onChange.mock.calls.length - 1][0] as BoardType;
+    expect(updated.lanes[0].items).toHaveLength(1);
+
+    // Click Undo
+    const btn = latestNotice().noticeEl.querySelector(".kb-undo-btn") as HTMLButtonElement;
+    btn.click();
+
+    // Board is restored
+    updated = onChange.mock.calls[onChange.mock.calls.length - 1][0] as BoardType;
+    expect(updated.lanes[0].items).toHaveLength(2);
+    expect(updated.lanes[0].items.map((i) => i.title)).toEqual(["Task A", "Task B"]);
+  });
+
+  test("delete lane shows undo toast and restores on click", async () => {
+    const { container, onChange } = renderBoard();
+    const menuBtns = container.querySelectorAll(".kb-lane-header .kb-menu-btn");
+    await fireEvent.click(menuBtns[0]);
+    Menu.instances[Menu.instances.length - 1].findItem("Delete list")!._onClick!();
+
+    const notice = latestNotice();
+    expect(notice.noticeEl.textContent).toContain('"To Do" deleted');
+
+    let updated = onChange.mock.calls[onChange.mock.calls.length - 1][0] as BoardType;
+    expect(updated.lanes).toHaveLength(1);
+
+    (notice.noticeEl.querySelector(".kb-undo-btn") as HTMLButtonElement).click();
+
+    updated = onChange.mock.calls[onChange.mock.calls.length - 1][0] as BoardType;
+    expect(updated.lanes).toHaveLength(2);
+    expect(updated.lanes[0].title).toBe("To Do");
+    expect(updated.lanes[0].items).toHaveLength(2);
+  });
+
+  test("archive card shows undo toast and restores on click", async () => {
+    const { container, onChange } = renderBoard();
+    const menu = await openCardMenu(container, 0);
+    menu.findItem("Archive card")!._onClick!();
+
+    const notice = latestNotice();
+    expect(notice.noticeEl.textContent).toContain("Card archived");
+
+    let updated = onChange.mock.calls[onChange.mock.calls.length - 1][0] as BoardType;
+    expect(updated.archive).toHaveLength(1);
+
+    (notice.noticeEl.querySelector(".kb-undo-btn") as HTMLButtonElement).click();
+
+    updated = onChange.mock.calls[onChange.mock.calls.length - 1][0] as BoardType;
+    expect(updated.archive).toHaveLength(0);
+    expect(updated.lanes[0].items).toHaveLength(2);
+  });
+
+  test("delete from archive shows undo toast and restores on click", async () => {
+    const archivedItems = [
+      { id: "a1", title: "Archived A", checked: false, hasCheckbox: false },
+    ];
+    const { container, onChange } = renderBoard(
+      { archive: archivedItems },
+      { showArchive: true }
+    );
+    const archiveBtn = container.querySelector(".kb-archive-lane .kb-menu-btn") as HTMLElement;
+    const before = Menu.instances.length;
+    await fireEvent.click(archiveBtn);
+    const menu = Menu.instances[before];
+    menu.findItem("Delete card")!._onClick!();
+
+    const notice = latestNotice();
+    expect(notice.noticeEl.textContent).toContain("Card deleted");
+
+    let updated = onChange.mock.calls[onChange.mock.calls.length - 1][0] as BoardType;
+    expect(updated.archive).toHaveLength(0);
+
+    (notice.noticeEl.querySelector(".kb-undo-btn") as HTMLButtonElement).click();
+
+    updated = onChange.mock.calls[onChange.mock.calls.length - 1][0] as BoardType;
+    expect(updated.archive).toHaveLength(1);
+    expect(updated.archive[0].title).toBe("Archived A");
+  });
+
+  test("a second destructive action hides the prior toast", async () => {
+    const { container } = renderBoard();
+    const menu1 = await openCardMenu(container, 0);
+    menu1.findItem("Delete card")!._onClick!();
+    const first = latestNotice();
+    expect(first.hidden).toBe(false);
+
+    await new Promise((r) => setTimeout(r, 10));
+    const menu2 = await openCardMenu(container, 0); // Task B is now index 0
+    menu2.findItem("Delete card")!._onClick!();
+
+    expect(first.hidden).toBe(true);
+    expect(latestNotice()).not.toBe(first);
   });
 });

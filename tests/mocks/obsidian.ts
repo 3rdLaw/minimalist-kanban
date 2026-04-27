@@ -53,6 +53,29 @@ export const Platform = {
   isMobile: false,
 };
 
+// ── Notice ────────────────────────────────────────────────
+
+export class Notice {
+  static instances: Notice[] = [];
+  noticeEl: HTMLElement;
+  hidden = false;
+
+  constructor(message: string, _timeout?: number) {
+    this.noticeEl = document.createElement("div");
+    if (message) this.noticeEl.textContent = message;
+    Notice.instances.push(this);
+  }
+
+  setMessage(message: string) {
+    this.noticeEl.textContent = message;
+    return this;
+  }
+
+  hide() {
+    this.hidden = true;
+  }
+}
+
 // ── Minimal stubs for types used in imports ───────────────
 
 export class TFile {

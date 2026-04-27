@@ -249,6 +249,51 @@ test("deleting a card via context menu removes it", () => {
   waitForFile((c) => !c.includes("Buy milk"), 5000);
 });
 
+// ── Undo card deletion ──────────────────────────────────
+
+test("undo: deleting a card shows toast, clicking Undo restores card", () => {
+  const before = domTextAll(".kb-item-title");
+  assert.ok(before.includes("Walk the dog"), "Setup: Walk the dog should exist");
+
+  // Open the menu for the card whose title is "Walk the dog"
+  evaluate([
+    "const card = [...document.querySelectorAll('.kb-item')].find(c => c.querySelector('.kb-item-title')?.textContent.trim() === 'Walk the dog')",
+    "card.querySelector('.kb-menu-btn').click()",
+  ].join("; "));
+  sleep(300);
+
+  clickMenuItem("Delete card");
+
+  // Wait for card to disappear
+  waitFor(
+    'dev:dom selector=".kb-item-title" text all',
+    (out) => !out.includes("Walk the dog"),
+    5000
+  );
+
+  // Undo toast appears with message and Undo button
+  waitForDom(".kb-undo-notice", "1", 3000);
+  const toastText = domTextAll(".kb-undo-notice");
+  assert.ok(
+    toastText.includes("Card deleted"),
+    `Toast should mention "Card deleted": ${toastText}`
+  );
+  assert.equal(domTotal(".kb-undo-btn"), "1", "Undo button should exist");
+
+  // Click Undo
+  evaluate("document.querySelector('.kb-undo-btn').click()");
+
+  // Card returns to DOM
+  waitFor(
+    'dev:dom selector=".kb-item-title" text all',
+    (out) => out.includes("Walk the dog"),
+    3000
+  );
+
+  // File content has the card restored
+  waitForFile((c) => c.includes("Walk the dog"), 5000);
+});
+
 // ── Plugin reload preserves state ───────────────────────
 
 test("plugin reload preserves board state", () => {
