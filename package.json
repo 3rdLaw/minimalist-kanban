@@ -1,6 +1,6 @@
 {
   "name": "minimalist-kanban",
-  "version": "0.5.8",
+  "version": "0.6.0",
   "description": "Minimalist markdown-backed Kanban boards for Obsidian",
   "license": "MIT",
   "main": "main.js",

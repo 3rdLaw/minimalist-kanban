@@ -1,7 +1,7 @@
 {
   "id": "minimalist-kanban",
   "name": "Minimalist Kanban",
-  "version": "0.5.8",
+  "version": "0.6.0",
   "minAppVersion": "1.0.0",
   "description": "A lightweight Kanban board plugin.",
   "author": "",
