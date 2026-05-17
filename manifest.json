@@ -4,6 +4,6 @@
   "version": "0.6.0",
   "minAppVersion": "1.0.0",
   "description": "A lightweight Kanban board plugin.",
-  "author": "",
+  "author": "https://github.com/3rdLaw",
   "isDesktopOnly": false
 }
