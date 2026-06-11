@@ -1,4 +1,5 @@
 import { Plugin, WorkspaceLeaf, TFile, MarkdownView, setIcon, ViewState } from "obsidian";
+import { around } from "monkey-around";
 import { KanbanView, KANBAN_VIEW_TYPE } from "./KanbanView";
 import { KBSettingTab, DEFAULT_SETTINGS } from "./settings";
 import type { KBSettings } from "./settings";
@@ -67,41 +68,43 @@ export default class KanbanBoardPlugin extends Plugin {
     const checkIsKanban = (path: string) => this.checkIsKanban(path);
 
     type SetViewStateFn = (viewState: ViewState, eState?: unknown) => Promise<void>;
-    const proto = WorkspaceLeaf.prototype as unknown as { setViewState: SetViewStateFn };
-    const original = proto.setViewState;
 
-    proto.setViewState = async function (
-      this: WorkspaceLeaf,
-      state: ViewState,
-      eState?: unknown
-    ): Promise<void> {
-      if (
-        !isBypassed() &&
-        state.type === "markdown" &&
-        state.state?.file
-      ) {
-        // Don't redirect if already viewing this file as markdown
-        // (e.g. toggling source/reading mode)
-        const currentFile =
-          this.view instanceof MarkdownView ? this.view.file?.path : undefined;
-        const alreadyMarkdown =
-          this.view instanceof MarkdownView &&
-          currentFile === state.state.file;
+    // monkey-around chains correctly if other plugins patch the same
+    // method, regardless of install/uninstall order
+    this.register(
+      around(WorkspaceLeaf.prototype as unknown as { setViewState: SetViewStateFn }, {
+        setViewState(original: SetViewStateFn): SetViewStateFn {
+          return async function (
+            this: WorkspaceLeaf,
+            state: ViewState,
+            eState?: unknown
+          ): Promise<void> {
+            if (
+              !isBypassed() &&
+              state.type === "markdown" &&
+              state.state?.file
+            ) {
+              // Don't redirect if already viewing this file as markdown
+              // (e.g. toggling source/reading mode)
+              const currentFile =
+                this.view instanceof MarkdownView ? this.view.file?.path : undefined;
+              const alreadyMarkdown =
+                this.view instanceof MarkdownView &&
+                currentFile === state.state.file;
 
-        if (!alreadyMarkdown) {
-          const isKanban = await checkIsKanban(state.state.file as string);
-          if (isKanban) {
-            const newState: ViewState = { ...state, type: KANBAN_VIEW_TYPE };
-            return original.call(this, newState, eState);
-          }
-        }
-      }
-      return original.call(this, state, eState);
-    };
-
-    this.register(() => {
-      proto.setViewState = original;
-    });
+              if (!alreadyMarkdown) {
+                const isKanban = await checkIsKanban(state.state.file as string);
+                if (isKanban) {
+                  const newState: ViewState = { ...state, type: KANBAN_VIEW_TYPE };
+                  return original.call(this, newState, eState);
+                }
+              }
+            }
+            return original.call(this, state, eState);
+          };
+        },
+      })
+    );
   }
 
   private isKanbanFileSync(path: string): boolean {
@@ -181,10 +184,15 @@ export default class KanbanBoardPlugin extends Plugin {
     const content =
       "---\nkanban-plugin: board\n---\n\n## To Do\n\n## In Progress\n\n## Done\n";
 
-    let name = "Kanban Board.md";
+    // Respect the user's "default location for new notes" setting
+    const folder = this.app.fileManager.getNewFileParent("");
+    const prefix =
+      folder.path === "/" || folder.path === "" ? "" : `${folder.path}/`;
+
+    let name = `${prefix}Kanban Board.md`;
     let counter = 1;
     while (this.app.vault.getAbstractFileByPath(name)) {
-      name = `Kanban Board ${counter}.md`;
+      name = `${prefix}Kanban Board ${counter}.md`;
       counter++;
     }
 

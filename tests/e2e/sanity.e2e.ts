@@ -513,6 +513,69 @@ test("link suggest: # shows heading autocomplete", () => {
   try { cli('delete path="Link Target.md" permanent'); } catch {}
 });
 
+// ── Content preservation through the live save pipeline ─
+
+test("editing a board preserves custom frontmatter, preamble, and fenced content", () => {
+  const FILE = "E2E Preservation Test";
+  const PATH = `${FILE}.md`;
+  // ~~~ fences (not ```) because the content passes through a shell string
+  const content = [
+    "---",
+    "kanban-plugin: board",
+    "tags: [e2e-keep]",
+    "---",
+    "",
+    "Intro note kept by the parser.",
+    "",
+    "## Keep",
+    "- Existing card",
+    "",
+    "~~~",
+    "- not a card",
+    "## not a lane",
+    "~~~",
+    "",
+  ].join("\\n");
+
+  try { cli(`delete path="${PATH}" permanent`); } catch { /* didn't exist */ }
+
+  try {
+    // Opening a brand-new file exercises the redirect's content-read
+    // fallback (metadataCache hasn't indexed it yet)
+    cli(`create name="${FILE}" content="${content}" open`);
+    waitForDom(".kb-lane", "1", 8000);
+
+    // Fence decoys must not render as cards or lanes
+    const cards = domTextAll(".kb-item-title");
+    assert.ok(cards.includes("Existing card"), `Missing real card: ${cards}`);
+    assert.ok(!cards.includes("not a card"), `Fence content rendered as card: ${cards}`);
+    const titles = domTextAll(".kb-lane-title");
+    assert.ok(!titles.includes("not a lane"), `Fence content rendered as lane: ${titles}`);
+
+    // Make a real edit through the UI to trigger the save pipeline
+    evaluate([
+      "const ta = document.querySelector('.kb-add-item-input')",
+      "ta.value = 'New e2e card'",
+      "ta.dispatchEvent(new Event('input', {bubbles:true}))",
+      "ta.dispatchEvent(new KeyboardEvent('keydown', {key:'Enter', bubbles:true}))",
+    ].join("; "));
+
+    // Wait out the debounced save, then verify nothing was mangled
+    const saved = waitFor(
+      `read path="${PATH}"`,
+      (c) => c.includes("New e2e card"),
+      8000
+    );
+    assert.ok(saved.includes("tags: [e2e-keep]"), "Custom frontmatter key was dropped");
+    assert.ok(saved.includes("Intro note kept by the parser."), "Preamble text was dropped");
+    assert.ok(saved.includes("- not a card"), "Fenced content was dropped");
+    assert.ok(saved.includes("## not a lane"), "Fenced content was dropped");
+    assert.ok(saved.includes("- [ ] Existing card"), "Existing card lost");
+  } finally {
+    try { cli(`delete path="${PATH}" permanent`); } catch { /* already gone */ }
+  }
+});
+
 // ── Cleanup ─────────────────────────────────────────────
 
 cleanup();

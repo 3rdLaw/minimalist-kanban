@@ -88,9 +88,11 @@ export class TFile {
 
 export class TextFileView {
   leaf: any;
+  app: any = {};
   file: TFile | null = null;
   data = "";
   contentEl: HTMLElement;
+  addAction = vi.fn();
 
   constructor(leaf: any) {
     this.leaf = leaf;
@@ -106,6 +108,7 @@ export class Plugin {
   saveData = vi.fn().mockResolvedValue(undefined);
   register = vi.fn();
   registerView = vi.fn();
+  registerEvent = vi.fn();
   addCommand = vi.fn();
   addSettingTab = vi.fn();
 }
@@ -122,14 +125,29 @@ export class PluginSettingTab {
 }
 
 export class Setting {
-  constructor(_el: HTMLElement) {}
-  setName(_n: string) { return this; }
-  setDesc(_d: string) { return this; }
+  static instances: Setting[] = [];
+  name = "";
+  desc = "";
+  toggle: {
+    value: boolean;
+    changeHandler: ((v: boolean) => unknown) | null;
+    setValue(v: boolean): unknown;
+    onChange(handler: (v: boolean) => unknown): unknown;
+  } | null = null;
+
+  constructor(_el: HTMLElement) {
+    Setting.instances.push(this);
+  }
+  setName(n: string) { this.name = n; return this; }
+  setDesc(d: string) { this.desc = d; return this; }
   addToggle(cb: any) {
     const toggle = {
-      setValue: (_v: boolean) => toggle,
-      onChange: (_cb: (v: boolean) => void) => toggle,
+      value: false,
+      changeHandler: null as ((v: boolean) => unknown) | null,
+      setValue(v: boolean) { toggle.value = v; return toggle; },
+      onChange(handler: (v: boolean) => unknown) { toggle.changeHandler = handler; return toggle; },
     };
+    this.toggle = toggle;
     cb(toggle);
     return this;
   }
@@ -137,11 +155,19 @@ export class Setting {
 
 export class WorkspaceLeaf {
   view: any = {};
+  lastViewState: any = null;
+  openFile = vi.fn().mockResolvedValue(undefined);
+
+  async setViewState(state: any, _eState?: unknown): Promise<void> {
+    this.lastViewState = state;
+  }
 }
 
 export class MarkdownView {
   file: TFile | null = null;
 }
+
+export const setIcon = vi.fn();
 
 export class MarkdownRenderer {
   static render(

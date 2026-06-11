@@ -29,7 +29,6 @@ describe("parseBoard", () => {
     );
     expect(board.lanes[0].items).toHaveLength(2);
     expect(board.lanes[0].items[0].title).toBe("Alpha");
-    expect(board.lanes[0].items[0].hasCheckbox).toBe(false);
     expect(board.lanes[0].items[0].checked).toBe(false);
   });
 
@@ -39,7 +38,6 @@ describe("parseBoard", () => {
     );
     const item = board.lanes[0].items[0];
     expect(item.title).toBe("Task");
-    expect(item.hasCheckbox).toBe(true);
     expect(item.checked).toBe(false);
   });
 
@@ -56,10 +54,8 @@ describe("parseBoard", () => {
       "---\nkanban-plugin: board\n---\n\n## Col\n- Plain\n- [ ] Unchecked\n- [x] Checked\n"
     );
     const items = board.lanes[0].items;
-    expect(items[0].hasCheckbox).toBe(false);
-    expect(items[1].hasCheckbox).toBe(true);
+    expect(items[0].checked).toBe(false);
     expect(items[1].checked).toBe(false);
-    expect(items[2].hasCheckbox).toBe(true);
     expect(items[2].checked).toBe(true);
   });
 
@@ -120,13 +116,14 @@ describe("parseBoard", () => {
     expect(board.lanes[1].items).toHaveLength(0);
   });
 
-  test("ignores items before any heading", () => {
+  test("items before any heading become preamble text, not cards", () => {
     const board = parseBoard(
       "---\nkanban-plugin: board\n---\n\n- Orphan\n\n## Col\n- Real\n"
     );
     expect(board.lanes).toHaveLength(1);
     expect(board.lanes[0].items).toHaveLength(1);
     expect(board.lanes[0].items[0].title).toBe("Real");
+    expect(board.preamble).toEqual(["- Orphan"]);
   });
 
   test("assigns unique ids", () => {
@@ -160,8 +157,8 @@ describe("serializeBoard", () => {
           id: "l1",
           title: "To Do",
           items: [
-            { id: "i1", title: "Task A", checked: false, hasCheckbox: false },
-            { id: "i2", title: "Task B", checked: false, hasCheckbox: false },
+            { id: "i1", title: "Task A", checked: false },
+            { id: "i2", title: "Task B", checked: false },
           ],
         },
       ],
@@ -185,8 +182,8 @@ describe("serializeBoard", () => {
           id: "l1",
           title: "Col",
           items: [
-            { id: "i1", title: "Open", checked: false, hasCheckbox: true },
-            { id: "i2", title: "Done", checked: true, hasCheckbox: true },
+            { id: "i1", title: "Open", checked: false },
+            { id: "i2", title: "Done", checked: true },
           ],
         },
       ],
@@ -207,7 +204,6 @@ describe("serializeBoard", () => {
               id: "i1",
               title: "First\nSecond\nThird",
               checked: false,
-              hasCheckbox: false,
             },
           ],
         },
@@ -220,7 +216,7 @@ describe("serializeBoard", () => {
   test("serializes archive section when present", () => {
     const board = makeBoard({
       archive: [
-        { id: "a1", title: "Archived", checked: false, hasCheckbox: false },
+        { id: "a1", title: "Archived", checked: false },
       ],
     });
     const md = serializeBoard(board);
@@ -276,21 +272,10 @@ describe("round-trip (parse → serialize → parse)", () => {
       "---\nkanban-plugin: board\n---\n\n## Col\n- [ ] Open\n- [x] Done\n- Plain\n";
     const reparsed = parseBoard(serializeBoard(parseBoard(original)));
     const items = reparsed.lanes[0].items;
-    expect(items[0]).toMatchObject({
-      hasCheckbox: true,
-      checked: false,
-      title: "Open",
-    });
-    expect(items[1]).toMatchObject({
-      hasCheckbox: true,
-      checked: true,
-      title: "Done",
-    });
-    expect(items[2]).toMatchObject({
-      hasCheckbox: true,
-      checked: false,
-      title: "Plain",
-    });
+    expect(items[0]).toMatchObject({ checked: false, title: "Open" });
+    expect(items[1]).toMatchObject({ checked: true, title: "Done" });
+    // Plain bullets are normalized to (unchecked) tasks on save
+    expect(items[2]).toMatchObject({ checked: false, title: "Plain" });
   });
 
   test("preserves archive section", () => {
@@ -312,5 +297,193 @@ describe("round-trip (parse → serialize → parse)", () => {
     expect(reparsed.lanes).toHaveLength(1);
     expect(reparsed.archive).toHaveLength(1);
     expect(reparsed.archive[0].title).toBe("Old");
+  });
+});
+
+// ── Structure injection via card text ────────────────────
+
+describe("card text containing structural markers", () => {
+  test("card text with a --- line survives round-trip without corrupting the board", () => {
+    const board: Board = {
+      lanes: [
+        {
+          id: "l1",
+          title: "Col",
+          items: [{ id: "i1", title: "progress\n---\nstill here", checked: false }],
+        },
+        { id: "l2", title: "Other", items: [{ id: "i2", title: "two", checked: false }] },
+      ],
+      archive: [],
+    };
+    const reparsed = parseBoard(serializeBoard(board));
+    expect(reparsed.lanes).toHaveLength(2);
+    expect(reparsed.archive).toHaveLength(0);
+    expect(reparsed.lanes[0].items[0].title).toBe("progress\n---\nstill here");
+    expect(reparsed.lanes[1].items[0].title).toBe("two");
+  });
+
+  test("card text with a ## line does not create a phantom lane", () => {
+    const board: Board = {
+      lanes: [
+        {
+          id: "l1",
+          title: "Col",
+          items: [{ id: "i1", title: "note\n## Not A Lane", checked: false }],
+        },
+      ],
+      archive: [],
+    };
+    const reparsed = parseBoard(serializeBoard(board));
+    expect(reparsed.lanes).toHaveLength(1);
+    expect(reparsed.lanes[0].items[0].title).toBe("note\n## Not A Lane");
+  });
+
+  test("card text with ## Archive does not start the archive section", () => {
+    const board: Board = {
+      lanes: [
+        {
+          id: "l1",
+          title: "Col",
+          items: [
+            { id: "i1", title: "tricky\n---\n## Archive", checked: false },
+            { id: "i2", title: "after", checked: false },
+          ],
+        },
+      ],
+      archive: [],
+    };
+    const reparsed = parseBoard(serializeBoard(board));
+    expect(reparsed.archive).toHaveLength(0);
+    expect(reparsed.lanes[0].items).toHaveLength(2);
+    expect(reparsed.lanes[0].items[0].title).toBe("tricky\n---\n## Archive");
+  });
+});
+
+// ── Content preservation ─────────────────────────────────
+
+describe("content preservation", () => {
+  test("preserves extra frontmatter keys", () => {
+    const md =
+      "---\nkanban-plugin: board\ntags: [project, q2]\naliases: [Sprint Board]\n---\n\n## To Do\n- task\n";
+    const out = serializeBoard(parseBoard(md));
+    expect(out).toContain("tags: [project, q2]");
+    expect(out).toContain("aliases: [Sprint Board]");
+    expect(out).toContain("kanban-plugin: board");
+  });
+
+  test("adds default frontmatter when the file has none", () => {
+    const board = parseBoard("## A\n- x\n");
+    expect(board.lanes).toHaveLength(1);
+    expect(serializeBoard(board)).toMatch(/^---\nkanban-plugin: board\n---\n/);
+  });
+
+  test("frontmatter is only recognized at the start of the document", () => {
+    const md = "\n---\nkanban-plugin: board\n---\n\n## A\n- x\n";
+    const board = parseBoard(md);
+    expect(board.frontmatter).toBeUndefined();
+    expect(board.lanes.map((l) => l.title)).toEqual(["A"]);
+    // The stray --- block is kept as preamble text
+    expect(board.preamble).toContain("kanban-plugin: board");
+  });
+
+  test("a --- not followed by ## Archive is a thematic break, not the archive separator", () => {
+    const md =
+      "---\nkanban-plugin: board\n---\n\n## A\n- one\n\n---\n\n## B\n- two\n";
+    const board = parseBoard(md);
+    expect(board.lanes.map((l) => l.title)).toEqual(["A", "B"]);
+    expect(board.archive).toHaveLength(0);
+    // ...and it survives the round-trip
+    const out = serializeBoard(board);
+    expect(out).toContain("---");
+    const reparsed = parseBoard(out);
+    expect(reparsed.lanes.map((l) => l.title)).toEqual(["A", "B"]);
+  });
+
+  test("code fence content is not parsed as cards or lanes", () => {
+    const md = [
+      "---",
+      "kanban-plugin: board",
+      "---",
+      "",
+      "## Col",
+      "- real card",
+      "",
+      "```js",
+      "- not a card",
+      "## not a lane",
+      "```",
+      "",
+    ].join("\n");
+    const board = parseBoard(md);
+    expect(board.lanes).toHaveLength(1);
+    expect(board.lanes[0].items).toHaveLength(1);
+    const out = serializeBoard(board);
+    expect(out).toContain("- not a card");
+    expect(out).toContain("## not a lane");
+    const reparsed = parseBoard(out);
+    expect(reparsed.lanes).toHaveLength(1);
+    expect(reparsed.lanes[0].items).toHaveLength(1);
+  });
+
+  test("text before the first lane is preserved as preamble", () => {
+    const md =
+      "---\nkanban-plugin: board\n---\n\nSome intro the user wrote.\n\n## To Do\n- task\n";
+    const out = serializeBoard(parseBoard(md));
+    expect(out).toContain("Some intro the user wrote.");
+    // Stable across a second round-trip
+    expect(serializeBoard(parseBoard(out))).toBe(out);
+  });
+
+  test("unrecognized lines under a lane are preserved", () => {
+    const md = [
+      "---",
+      "kanban-plugin: board",
+      "---",
+      "",
+      "## Col",
+      "- card",
+      "",
+      "### Subheading note",
+      "Free paragraph here.",
+      "",
+    ].join("\n");
+    const out = serializeBoard(parseBoard(md));
+    expect(out).toContain("### Subheading note");
+    expect(out).toContain("Free paragraph here.");
+    const reparsed = parseBoard(out);
+    expect(reparsed.lanes[0].items).toHaveLength(1);
+    expect(serializeBoard(reparsed)).toBe(out);
+  });
+
+  test("empty checkbox lines are preserved rather than dropped", () => {
+    const md = "---\nkanban-plugin: board\n---\n\n## Col\n- [ ]\n";
+    const board = parseBoard(md);
+    expect(board.lanes[0].items).toHaveLength(0);
+    expect(serializeBoard(board)).toContain("- [ ]");
+  });
+
+  test("extra lines in the archive section are preserved", () => {
+    const md = [
+      "---",
+      "kanban-plugin: board",
+      "---",
+      "",
+      "## Col",
+      "- card",
+      "",
+      "---",
+      "",
+      "## Archive",
+      "- old",
+      "",
+      "a note about the archive",
+      "",
+    ].join("\n");
+    const board = parseBoard(md);
+    expect(board.archive).toHaveLength(1);
+    expect(board.archiveExtra).toEqual(["a note about the archive"]);
+    const out = serializeBoard(board);
+    expect(out).toContain("a note about the archive");
+    expect(serializeBoard(parseBoard(out))).toBe(out);
   });
 });

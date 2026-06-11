@@ -3,7 +3,7 @@
   import { getSortable } from "./sortable";
   const Sortable = getSortable();
   import { Menu, Notice, Platform } from "obsidian";
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { generateId } from "./types";
 
   export let board;
@@ -21,7 +21,9 @@
     laneSortable = new Sortable(boardEl, {
       animation: 150,
       handle: ".kb-lane-drag-handle",
-      draggable: ".kb-lane",
+      // Exclude the archive lane so it neither drags nor shifts the
+      // index space that maps drop positions onto board.lanes
+      draggable: ".kb-lane:not(.kb-archive-lane)",
       direction: "horizontal",
       onEnd(evt) {
         const { oldIndex, newIndex, item: el } = evt;
@@ -71,15 +73,20 @@
     };
   });
 
+  // The undo closures reference this component's board; if the component
+  // is torn down (file closed, external re-render) the toast must go too.
+  onDestroy(() => {
+    undoNotice?.hide();
+    undoNotice = null;
+  });
+
   function save() {
     onChange(board);
   }
 
-  function snapshot() {
-    return JSON.parse(JSON.stringify(board));
-  }
-
-  function showUndoToast(message, prior) {
+  // `undo` reverses just the action that triggered the toast, so other
+  // changes made while the toast is visible are kept.
+  function showUndoToast(message, undo) {
     undoNotice?.hide();
     const notice = new Notice("", 7000);
     undoNotice = notice;
@@ -94,7 +101,8 @@
     btn.textContent = "Undo";
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
-      board = prior;
+      undo();
+      board = board;
       save();
       notice.hide();
       if (undoNotice === notice) undoNotice = null;
@@ -122,12 +130,14 @@
   }
 
   function handleLaneDelete(e) {
-    const lane = board.lanes.find((l) => l.id === e.detail.laneId);
-    if (!lane) return;
-    const prior = snapshot();
-    board.lanes = board.lanes.filter((l) => l.id !== e.detail.laneId);
+    const idx = board.lanes.findIndex((l) => l.id === e.detail.laneId);
+    if (idx < 0) return;
+    const [lane] = board.lanes.splice(idx, 1);
+    board = board;
     save();
-    showUndoToast(`List "${lane.title}" deleted`, prior);
+    showUndoToast(`List "${lane.title}" deleted`, () => {
+      board.lanes.splice(Math.min(idx, board.lanes.length), 0, lane);
+    });
   }
 
   function handleLaneRename(e) {
@@ -158,7 +168,6 @@
         id: generateId(),
         title: e.detail.title,
         checked: false,
-        hasCheckbox: true,
       };
       if (settings.prependCards) {
         lane.items.unshift(newItem);
@@ -173,11 +182,14 @@
   function handleItemDelete(e) {
     const lane = board.lanes.find((l) => l.id === e.detail.laneId);
     if (lane) {
-      const prior = snapshot();
-      lane.items = lane.items.filter((i) => i.id !== e.detail.itemId);
+      const idx = lane.items.findIndex((i) => i.id === e.detail.itemId);
+      if (idx < 0) return;
+      const [item] = lane.items.splice(idx, 1);
       board = board;
       save();
-      showUndoToast("Card deleted", prior);
+      showUndoToast("Card deleted", () => {
+        lane.items.splice(Math.min(idx, lane.items.length), 0, item);
+      });
     }
   }
 
@@ -312,13 +324,15 @@
         .setTitle("Archive card")
         .setIcon("archive")
         .onClick(() => {
-          const prior = snapshot();
           const idx = lane.items.indexOf(item);
           lane.items.splice(idx, 1);
           board.archive.push(item);
           board = board;
           save();
-          showUndoToast("Card archived", prior);
+          showUndoToast("Card archived", () => {
+            board.archive = board.archive.filter((a) => a.id !== item.id);
+            lane.items.splice(Math.min(idx, lane.items.length), 0, item);
+          });
         })
     );
 
@@ -327,11 +341,14 @@
         .setTitle("Delete card")
         .setIcon("trash-2")
         .onClick(() => {
-          const prior = snapshot();
-          lane.items = lane.items.filter((it) => it.id !== itemId);
+          const idx = lane.items.findIndex((it) => it.id === itemId);
+          if (idx < 0) return;
+          const [removed] = lane.items.splice(idx, 1);
           board = board;
           save();
-          showUndoToast("Card deleted", prior);
+          showUndoToast("Card deleted", () => {
+            lane.items.splice(Math.min(idx, lane.items.length), 0, removed);
+          });
         })
     );
 
@@ -403,11 +420,14 @@
         .setTitle("Delete card")
         .setIcon("trash-2")
         .onClick(() => {
-          const prior = snapshot();
-          board.archive = board.archive.filter((i) => i.id !== itemId);
+          const idx = board.archive.findIndex((i) => i.id === itemId);
+          if (idx < 0) return;
+          const [removed] = board.archive.splice(idx, 1);
           board = board;
           save();
-          showUndoToast("Card deleted", prior);
+          showUndoToast("Card deleted", () => {
+            board.archive.splice(Math.min(idx, board.archive.length), 0, removed);
+          });
         })
     );
 

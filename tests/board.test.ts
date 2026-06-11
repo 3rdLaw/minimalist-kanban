@@ -36,15 +36,15 @@ function makeBoard(overrides?: Partial<BoardType>): BoardType {
         id: "lane-1",
         title: "To Do",
         items: [
-          { id: "i1", title: "Task A", checked: false, hasCheckbox: false },
-          { id: "i2", title: "Task B", checked: false, hasCheckbox: false },
+          { id: "i1", title: "Task A", checked: false },
+          { id: "i2", title: "Task B", checked: false },
         ],
       },
       {
         id: "lane-2",
         title: "Done",
         items: [
-          { id: "i3", title: "Task C", checked: false, hasCheckbox: false },
+          { id: "i3", title: "Task C", checked: false },
         ],
       },
     ],
@@ -316,7 +316,7 @@ describe("newNoteFromCard filename sanitization", () => {
             {
               id: "lane-1",
               title: "L",
-              items: [{ id: "i1", title: cardTitle, checked: false, hasCheckbox: false }],
+              items: [{ id: "i1", title: cardTitle, checked: false }],
             },
           ],
           archive: [],
@@ -407,7 +407,7 @@ describe("newNoteFromCard filename sanitization", () => {
             {
               id: "lane-1",
               title: "L",
-              items: [{ id: "i1", title: "Existing", checked: false, hasCheckbox: false }],
+              items: [{ id: "i1", title: "Existing", checked: false }],
             },
           ],
           archive: [],
@@ -576,14 +576,23 @@ describe("Board drag and drop", () => {
       expect(s.options.delayOnTouchOnly).toBe(true);
     });
   });
+
+  test("board-level SortableJS excludes the archive lane from lane dragging", () => {
+    renderBoard({ archive: [{ id: "a1", title: "Old", checked: false }] }, { showArchive: true });
+
+    const laneSortable = SortableMock.instances.find(
+      (s) => s.options.handle === ".kb-lane-drag-handle"
+    )!;
+    expect(laneSortable.options.draggable).toBe(".kb-lane:not(.kb-archive-lane)");
+  });
 });
 
 // ── Archive lane ────────────────────────────────────────
 
 describe("Archive lane", () => {
   const archivedItems = [
-    { id: "a1", title: "Archived A", checked: false, hasCheckbox: false },
-    { id: "a2", title: "Archived B", checked: false, hasCheckbox: false },
+    { id: "a1", title: "Archived A", checked: false },
+    { id: "a2", title: "Archived B", checked: false },
   ];
 
   function openArchiveMenu(container: HTMLElement, index = 0) {
@@ -919,7 +928,7 @@ describe("Undo toast", () => {
 
   test("delete from archive shows undo toast and restores on click", async () => {
     const archivedItems = [
-      { id: "a1", title: "Archived A", checked: false, hasCheckbox: false },
+      { id: "a1", title: "Archived A", checked: false },
     ];
     const { container, onChange } = renderBoard(
       { archive: archivedItems },
@@ -942,6 +951,49 @@ describe("Undo toast", () => {
     updated = onChange.mock.calls[onChange.mock.calls.length - 1][0] as BoardType;
     expect(updated.archive).toHaveLength(1);
     expect(updated.archive[0].title).toBe("Archived A");
+  });
+
+  test("undo only reverses its own action — other changes made meanwhile are kept", async () => {
+    const { container, onChange } = renderBoard();
+    const menu = await openCardMenu(container, 0);
+    menu.findItem("Delete card")!._onClick!();
+
+    // While the toast is visible, add a card to the second lane
+    const inputs = container.querySelectorAll(".kb-add-item-input");
+    const doneInput = inputs[1] as HTMLTextAreaElement;
+    await fireEvent.input(doneInput, { target: { value: "Added later" } });
+    await fireEvent.keyDown(doneInput, { key: "Enter" });
+
+    (latestNotice().noticeEl.querySelector(".kb-undo-btn") as HTMLButtonElement).click();
+
+    const updated = onChange.mock.calls[onChange.mock.calls.length - 1][0] as BoardType;
+    // Deleted card came back at its original position...
+    expect(updated.lanes[0].items.map((i) => i.title)).toEqual(["Task A", "Task B"]);
+    // ...and the card added after the delete is still there
+    expect(updated.lanes[1].items.map((i) => i.title)).toEqual(["Task C", "Added later"]);
+  });
+
+  test("undo restores a card deleted from the middle at its original index", async () => {
+    const { container, onChange } = renderBoard({
+      lanes: [
+        {
+          id: "lane-1",
+          title: "To Do",
+          items: [
+            { id: "i1", title: "First", checked: false },
+            { id: "i2", title: "Middle", checked: false },
+            { id: "i3", title: "Last", checked: false },
+          ],
+        },
+      ],
+    });
+    const menu = await openCardMenu(container, 1);
+    menu.findItem("Delete card")!._onClick!();
+
+    (latestNotice().noticeEl.querySelector(".kb-undo-btn") as HTMLButtonElement).click();
+
+    const updated = onChange.mock.calls[onChange.mock.calls.length - 1][0] as BoardType;
+    expect(updated.lanes[0].items.map((i) => i.title)).toEqual(["First", "Middle", "Last"]);
   });
 
   test("a second destructive action hides the prior toast", async () => {

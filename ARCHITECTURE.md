@@ -47,7 +47,7 @@ The plugin intercepts `setViewState` on all workspace leaves so that opening suc
 |---|---|
 | `main.ts` | Plugin entry point. Registers view, commands ("Create new Kanban board", "Toggle Kanban/Markdown view"), settings tab, and the `setViewState` monkey-patch for auto-redirect. |
 | `KanbanView.ts` | `TextFileView` subclass. Bridges Obsidian's file I/O with the Svelte component tree. Calls `parseBoard`/`serializeBoard` and mounts `Board.svelte`. |
-| `parser.ts` | Pure-function Markdown ↔ Board serialization. Parses `## ` headings as lanes, `- ` items as cards (with optional `[ ]`/`[x]` checkboxes), supports multi-line card text (indented continuation), and a `---`-delimited archive section. |
+| `parser.ts` | Pure-function Markdown ↔ Board serialization. Parses `## ` headings as lanes, `- ` items as cards (with optional `[ ]`/`[x]` checkboxes), supports multi-line card text (indented continuation), and an archive section delimited by `---` followed by `## Archive`. Everything else — frontmatter (including user keys), text before the first lane, code fences, unrecognized lines — is preserved verbatim and re-emitted on save. Card text containing `---`/`## ` lines is escaped via indentation and cannot corrupt the board structure. |
 | `types.ts` | TypeScript interfaces: `Board`, `Lane`, `Item`, plus `generateId()`. |
 | `settings.ts` | `KBSettings` interface, defaults, and `PluginSettingTab` implementation. Three settings: show checkboxes, enter-key behavior, prepend new cards. |
 | `sortable.ts` | Thin wrapper (`getSortable()`) that returns either the real SortableJS constructor or a test mock injected via `globalThis.__TEST_SORTABLE__`. |
@@ -70,12 +70,16 @@ The plugin intercepts `setViewState` on all workspace leaves so that opening suc
 
 | File | Purpose |
 |---|---|
-| `setup.ts` | Vitest setup: loads `@testing-library/jest-dom` matchers, injects `SortableMock` via `globalThis.__TEST_SORTABLE__`, resets mock state between tests. |
-| `parser.test.ts` | 22 tests for `parseBoard` and `serializeBoard`: frontmatter, lanes, items, checkboxes, multi-line cards, archive, round-trip fidelity. |
-| `item.test.ts` | 14 tests for `Item.svelte`: rendering, inline editing, keyboard handling, checkbox toggle, enter/shift+enter behavior with settings. |
-| `lane.test.ts` | 18 tests for `Lane.svelte`: rendering, adding items, lane title editing, context menu, SortableJS initialization and configuration. |
-| `board.test.ts` | 23 tests for `Board.svelte`: adding lanes/items, deleting, renaming, moving lanes, card context menu actions (duplicate, move to top/bottom, move to list, archive), drag-and-drop via SortableJS `onEnd` simulation, new note from card. |
-| `mocks/obsidian.ts` | Mock for the `obsidian` module. Provides `Menu`, `MenuItem`, `Platform`, `TFile`, and stubbed workspace/vault/fileManager objects. |
+| `setup.ts` | Vitest setup: loads `@testing-library/jest-dom` matchers, injects `SortableMock` via `globalThis.__TEST_SORTABLE__`, stubs Obsidian's `HTMLElement` helpers (`empty`, `addClass`, `createEl`, `setCssProps`), resets mock state between tests. |
+| `parser.test.ts` | `parseBoard`/`serializeBoard`: frontmatter, lanes, items, checkboxes, multi-line cards, archive, round-trip fidelity, structure-injection resistance (cards containing `---`/`## `), and content preservation (user frontmatter, preamble, code fences, unrecognized lines). |
+| `item.test.ts` | `Item.svelte`: rendering, inline editing, keyboard handling, checkbox toggle, enter/shift+enter behavior with settings, link-suggest cleanup on unmount. |
+| `lane.test.ts` | `Lane.svelte`: rendering, adding items, lane title editing, context menu, SortableJS initialization and configuration. |
+| `board.test.ts` | `Board.svelte`: adding lanes/items, deleting, renaming, moving lanes, card context menu actions (duplicate, move to top/bottom, move to list, archive), drag-and-drop via SortableJS `onEnd` simulation, new note from card, per-action undo toasts. |
+| `link-suggest.test.ts` | `LinkSuggest`: trigger detection, file/heading search, keyboard navigation, acceptance, lifecycle. |
+| `main.test.ts` | `main.ts`: the `setViewState` redirect patch (and its uninstall), `checkIsKanban` cache/content fallback, view toggling, board creation (default folder, name collisions), settings persistence, toolbar button injection. |
+| `kanban-view.test.ts` | `KanbanView`: parse → render → serialize round-trip through the view, frontmatter preservation, `onChange` → `requestSave` wiring, clear/close lifecycle, live settings updates. |
+| `settings.test.ts` | `KBSettingTab`: toggle rendering, initial values, change handlers persisting via `saveSettings`. |
+| `mocks/obsidian.ts` | Mock for the `obsidian` module. Provides `Menu`, `MenuItem`, `Platform`, `TFile`, `WorkspaceLeaf`, `Setting`, and stubbed workspace/vault/fileManager objects. |
 | `mocks/sortablejs.ts` | Mock for SortableJS. Records constructor calls in a static `instances` array so tests can inspect options and simulate `onEnd` callbacks. |
 
 ### Vitest configuration (`vitest.config.mts`)
@@ -105,7 +109,8 @@ The plugin intercepts `setViewState` on all workspace leaves so that opening suc
 | Library | Why |
 |---|---|
 | **Svelte 4** | Lightweight, compiles to vanilla JS with no runtime framework overhead. Good fit for an Obsidian plugin where bundle size matters. |
-| **SortableJS** | Battle-tested drag-and-drop library that handles touch devices, animation, and cross-list moves. The only runtime dependency. |
+| **SortableJS** | Battle-tested drag-and-drop library that handles touch devices, animation, and cross-list moves. |
+| **monkey-around** | Community-standard helper for patching Obsidian methods (`WorkspaceLeaf.setViewState`). Unlike a hand-rolled save/restore, it chains correctly when multiple plugins patch the same method and unload in any order. |
 | **esbuild + esbuild-svelte** | Fast bundler. Matches the Obsidian plugin ecosystem's standard build toolchain. |
 | **Vitest** | Fast, Vite-native test runner. Shares the same Svelte/Vite transform pipeline used by the project. |
 | **@testing-library/svelte v4** | Component testing utilities matched to Svelte 4. Renders components into jsdom and provides `fireEvent`/`waitFor` helpers. |
@@ -123,11 +128,14 @@ npm test
 # Run tests in watch mode
 npm run test:watch
 
+# Run with coverage (v8 provider)
+npm run test:coverage
+
 # Run a specific test file
 npx vitest run tests/parser.test.ts
 ```
 
-The test suite has 77 tests across 4 files (parser, item, lane, board). All tests run in jsdom with mocked Obsidian API and SortableJS.
+The test suite has ~196 tests across 8 files. All tests run in jsdom with mocked Obsidian API and SortableJS.
 
 ### E2E tests
 

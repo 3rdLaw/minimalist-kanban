@@ -30,7 +30,7 @@ export class KBSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Show checkboxes")
       .setDesc(
-        "Display checkboxes on cards that have them in Markdown."
+        "Display a checkbox on every card. Cards are always saved as Markdown tasks; this only toggles whether the checkbox is shown."
       )
       .addToggle((toggle) =>
         toggle

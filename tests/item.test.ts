@@ -18,7 +18,6 @@ function makeItem(overrides = {}) {
     id: "item-1",
     title: "Test card",
     checked: false,
-    hasCheckbox: false,
     ...overrides,
   };
 }
@@ -49,9 +48,9 @@ describe("Item", () => {
     expect(el.textContent).toBe("Line 1\nLine 2");
   });
 
-  test("shows checkbox when setting enabled and item has checkbox", () => {
+  test("shows checkbox when setting enabled", () => {
     const { container } = renderItem(
-      { hasCheckbox: true, checked: true },
+      { checked: true },
       { showCheckboxes: true }
     );
     const checkbox = container.querySelector(
@@ -62,18 +61,7 @@ describe("Item", () => {
   });
 
   test("hides checkbox when setting disabled", () => {
-    const { container } = renderItem(
-      { hasCheckbox: true },
-      { showCheckboxes: false }
-    );
-    expect(container.querySelector(".kb-item-checkbox")).toBeNull();
-  });
-
-  test("hides checkbox when item has no checkbox", () => {
-    const { container } = renderItem(
-      { hasCheckbox: false },
-      { showCheckboxes: true }
-    );
+    const { container } = renderItem({}, { showCheckboxes: false });
     expect(container.querySelector(".kb-item-checkbox")).toBeNull();
   });
 
@@ -147,6 +135,17 @@ describe("Item", () => {
   test("renders menu button", () => {
     const { container } = renderItem();
     expect(container.querySelector(".kb-menu-btn")).toBeTruthy();
+  });
+
+  test("removes the link-suggest popup when unmounted mid-edit", async () => {
+    const { container, unmount } = renderItem();
+    await fireEvent.click(container.querySelector(".kb-item-title")!);
+    // LinkSuggest attaches in a setTimeout after edit mode opens
+    await new Promise((r) => setTimeout(r, 10));
+    expect(document.body.querySelector(".kb-link-suggest")).toBeTruthy();
+
+    unmount();
+    expect(document.body.querySelector(".kb-link-suggest")).toBeNull();
   });
 
   test("dispatches showmenu event on menu button click", async () => {
@@ -242,7 +241,7 @@ describe("Item", () => {
 
   test("toggling checkbox dispatches edit with new checked state", async () => {
     const { container, component } = renderItem(
-      { hasCheckbox: true, checked: false },
+      { checked: false },
       { showCheckboxes: true }
     );
     const handler = vi.fn();
@@ -261,7 +260,7 @@ describe("Item", () => {
 
   test("unchecking a checked item dispatches edit with checked=false", async () => {
     const { container, component } = renderItem(
-      { hasCheckbox: true, checked: true },
+      { checked: true },
       { showCheckboxes: true }
     );
     const handler = vi.fn();

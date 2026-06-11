@@ -1,6 +1,6 @@
 <script>
   import { MarkdownRenderer, Platform } from "obsidian";
-  import { createEventDispatcher, afterUpdate, onMount, tick } from "svelte";
+  import { createEventDispatcher, afterUpdate, onDestroy, onMount } from "svelte";
   import { LinkSuggest } from "./LinkSuggest";
 
   export let item;
@@ -61,6 +61,13 @@
 
   onMount(() => {
     if (titleEl) renderMarkdown(titleEl);
+  });
+
+  // If the card unmounts mid-edit (board re-render, lane deleted), the
+  // suggestion popup lives in document.body and must be removed here.
+  onDestroy(() => {
+    linkSuggest?.destroy();
+    linkSuggest = null;
   });
 
   afterUpdate(() => {
@@ -162,7 +169,7 @@
 </script>
 
 <div class="kb-item" data-id={item.id}>
-  {#if settings.showCheckboxes && item.hasCheckbox}
+  {#if settings.showCheckboxes}
     <input
       type="checkbox"
       checked={item.checked}

@@ -1,5 +1,6 @@
 .claude/
 node_modules/
+coverage/
 main.js
 data.json
 bun.lockb

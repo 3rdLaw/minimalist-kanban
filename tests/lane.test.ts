@@ -16,8 +16,8 @@ function makeLane(overrides = {}) {
     id: "lane-1",
     title: "To Do",
     items: [
-      { id: "i1", title: "First", checked: false, hasCheckbox: false },
-      { id: "i2", title: "Second", checked: false, hasCheckbox: false },
+      { id: "i1", title: "First", checked: false },
+      { id: "i2", title: "Second", checked: false },
     ],
     ...overrides,
   };
