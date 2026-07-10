@@ -109,6 +109,68 @@ function cleanup() {
   }
 }
 
+/** JSON map of every lane title to its card titles, for order assertions. */
+function laneMap(): string {
+  return evaluate(
+    "JSON.stringify([...document.querySelectorAll('.kb-lane')].map(l => " +
+      "l.querySelector('.kb-lane-title').textContent + ': ' + " +
+      "[...l.querySelectorAll('.kb-item-title')].map(i => i.textContent.trim()).join(', ')))"
+  );
+}
+
+/**
+ * Synthetic drag-and-drop. SortableJS uses native HTML5 DnD in Electron,
+ * which synthetic mouse events alone can't trigger. This staged sequence
+ * works: pointerdown arms the element (Sortable sets draggable=true), then
+ * dragstart on the draggable, dragenter/dragover/drop on the target, and
+ * dragend — each stage in its own eval so Sortable sees separate turns.
+ *
+ * armExpr:  element receiving pointerdown (the drag handle, or the card)
+ * dragExpr: the draggable element (the lane, or the card)
+ * dropExpr: the drop target
+ * at: where on the target to drop — "bottom" inserts after a card,
+ *     "right" moves a lane past the target lane
+ */
+function synthDrag(
+  armExpr: string,
+  dragExpr: string,
+  dropExpr: string,
+  at: "bottom" | "right"
+) {
+  evaluate([
+    "window.__mk = (x, y) => ({bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0})",
+    `window.__drag = ${dragExpr}`,
+    `window.__drop = ${dropExpr}`,
+    "window.__dt = new DataTransfer()",
+    `const arm = ${armExpr}`,
+    "const r = arm.getBoundingClientRect()",
+    "arm.dispatchEvent(new PointerEvent('pointerdown', window.__mk(r.x + 5, r.y + 5)))",
+  ].join("; "));
+  sleep(200);
+  evaluate([
+    "const r = window.__drag.getBoundingClientRect()",
+    "window.__drag.dispatchEvent(new DragEvent('dragstart', Object.assign(window.__mk(r.x + 10, r.y + 10), {dataTransfer: window.__dt})))",
+  ].join("; "));
+  sleep(200);
+  const point =
+    at === "bottom"
+      ? "{x: t.x + t.width / 2, y: t.y + t.height - 2}"
+      : "{x: t.x + t.width - 5, y: t.y + 20}";
+  evaluate([
+    "const t = window.__drop.getBoundingClientRect()",
+    `const p = ${point}`,
+    "const o = Object.assign(window.__mk(p.x, p.y), {dataTransfer: window.__dt})",
+    "window.__drop.dispatchEvent(new DragEvent('dragenter', o))",
+    "window.__drop.dispatchEvent(new DragEvent('dragover', o))",
+    "window.__drop.dispatchEvent(new DragEvent('drop', o))",
+    "window.__drag.dispatchEvent(new DragEvent('dragend', o))",
+  ].join("; "));
+}
+
+function findCard(title: string): string {
+  return `[...document.querySelectorAll('.kb-item')].find(i => i.querySelector('.kb-item-title')?.textContent.trim() === '${title}')`;
+}
+
 function createBoard() {
   cli(`create name="${TEST_FILE}" content="${KANBAN_CONTENT}" open`);
   waitForDom(".kb-lane", "3", 8000);
@@ -574,6 +636,297 @@ test("editing a board preserves custom frontmatter, preamble, and fenced content
   } finally {
     try { cli(`delete path="${PATH}" permanent`); } catch { /* already gone */ }
   }
+});
+
+// ── Multi-paragraph card text ───────────────────────────
+
+test("multi-paragraph card text survives the save/reload cycle", () => {
+  const FILE = "E2E Multiline Test";
+  const PATH = `${FILE}.md`;
+  const content = [
+    "---",
+    "kanban-plugin: board",
+    "---",
+    "",
+    "## Col",
+    "- Seed card",
+    "",
+  ].join("\\n");
+
+  try { cli(`delete path="${PATH}" permanent`); } catch { /* didn't exist */ }
+
+  try {
+    cli(`create name="${FILE}" content="${content}" open`);
+    waitForDom(".kb-lane", "1", 8000);
+
+    // Edit the card into two paragraphs separated by a blank line, blur to save
+    evaluate([
+      "const t = [...document.querySelectorAll('.kb-item-title')].find(e => e.textContent.trim() === 'Seed card')",
+      "t.click()",
+    ].join("; "));
+    waitFor('dev:dom selector=".kb-item-edit" total', (o) => o.includes("1"), 3000);
+    evaluate([
+      "const ta = document.querySelector('.kb-item-edit')",
+      "ta.value = 'para one\\n\\npara two'",
+      "ta.dispatchEvent(new Event('input', {bubbles:true}))",
+      // blur() is a no-op when the window never granted focus — fire the event
+      "ta.dispatchEvent(new FocusEvent('blur'))",
+    ].join("; "));
+
+    // Wait out the debounced save; the file must still hold a single card
+    const saved = waitFor(`read path="${PATH}"`, (c) => c.includes("para two"), 8000);
+    assert.equal(
+      (saved.match(/- \[ \]/g) || []).length,
+      1,
+      `Card was split in the file: ${JSON.stringify(saved)}`
+    );
+
+    // Reload the plugin (forces a fresh parse) and check the card stayed whole
+    cli("plugin:reload id=minimalist-kanban");
+    waitForDom(".kb-lane", "1", 8000);
+    const cards = domTextAll(".kb-item-title");
+    assert.ok(cards.includes("para one"), `Card lost first paragraph: ${cards}`);
+    assert.ok(cards.includes("para two"), `Card lost second paragraph: ${cards}`);
+    assert.equal(domTotal(".kb-item"), "1", "Card was split on re-parse");
+  } finally {
+    try { cli(`delete path="${PATH}" permanent`); } catch { /* already gone */ }
+  }
+});
+
+// ── Drag and drop ───────────────────────────────────────
+
+const DRAG_FILE = "E2E Drag Test";
+const DRAG_PATH = `${DRAG_FILE}.md`;
+
+test("drag: card moves across lanes and saves in order", () => {
+  try { cli(`delete path="${DRAG_PATH}" permanent`); } catch { /* didn't exist */ }
+  const content = [
+    "---",
+    "kanban-plugin: board",
+    "---",
+    "",
+    "## Alpha",
+    "- card one",
+    "- card two",
+    "",
+    "## Beta",
+    "- card three",
+    "",
+  ].join("\\n");
+  cli(`create name="${DRAG_FILE}" content="${content}" open`);
+  waitForDom(".kb-lane", "2", 8000);
+
+  // Drop "card one" onto the bottom edge of "card three" (inserts after it)
+  synthDrag(findCard("card one"), findCard("card one"), findCard("card three"), "bottom");
+
+  waitFor(
+    'dev:dom selector=".kb-lane" text all',
+    (out) => /Beta[\s\S]*card three[\s\S]*card one/.test(out),
+    5000
+  );
+  const lanes = laneMap();
+  assert.ok(lanes.includes("Alpha: card two"), `Alpha should only have card two: ${lanes}`);
+  assert.ok(lanes.includes("Beta: card three, card one"), `Beta order wrong: ${lanes}`);
+
+  const saved = waitFor(
+    `read path="${DRAG_PATH}"`,
+    (c) => /## Beta[\s\S]*card one/.test(c),
+    8000
+  );
+  const alphaSection = saved.substring(saved.indexOf("## Alpha"), saved.indexOf("## Beta"));
+  assert.ok(!alphaSection.includes("card one"), `card one still under Alpha:\n${saved}`);
+  assert.ok(
+    saved.indexOf("card three") < saved.indexOf("card one"),
+    `card one should be after card three:\n${saved}`
+  );
+});
+
+test("drag: lane reorder via drag handle saves", () => {
+  // Continues from the previous test's board: Alpha, Beta
+  synthDrag(
+    "document.querySelector('.kb-lane .kb-lane-drag-handle')",
+    "document.querySelector('.kb-lane')",
+    "[...document.querySelectorAll('.kb-lane')][1]",
+    "right"
+  );
+
+  waitFor(
+    'dev:dom selector=".kb-lane-title" text all',
+    (out) => out.indexOf("Beta") < out.indexOf("Alpha"),
+    5000
+  );
+  const saved = waitFor(
+    `read path="${DRAG_PATH}"`,
+    (c) => c.indexOf("## Beta") < c.indexOf("## Alpha"),
+    8000
+  );
+  assert.ok(saved.indexOf("## Beta") < saved.indexOf("## Alpha"), `Lane order not saved:\n${saved}`);
+
+  try { cli(`delete path="${DRAG_PATH}" permanent`); } catch { /* already gone */ }
+});
+
+// ── Card menu, archive, lane actions, settings ──────────
+
+const ACTIONS_FILE = "E2E Actions Test";
+const ACTIONS_PATH = `${ACTIONS_FILE}.md`;
+
+function openCardMenu(title: string) {
+  evaluate(`${findCard(title)}.querySelector('.kb-menu-btn').click()`);
+  sleep(300);
+}
+
+test("context menu: duplicate card", () => {
+  try { cli(`delete path="${ACTIONS_PATH}" permanent`); } catch { /* didn't exist */ }
+  const content = [
+    "---",
+    "kanban-plugin: board",
+    "---",
+    "",
+    "## One",
+    "- alpha",
+    "- beta",
+    "",
+    "## Two",
+    "- gamma",
+    "",
+  ].join("\\n");
+  cli(`create name="${ACTIONS_FILE}" content="${content}" open`);
+  waitForDom(".kb-lane", "2", 8000);
+
+  openCardMenu("alpha");
+  clickMenuItem("Duplicate card");
+  const saved = waitFor(
+    `read path="${ACTIONS_PATH}"`,
+    (c) => (c.match(/- \[ \] alpha/g) || []).length === 2,
+    8000
+  );
+  // The duplicate sits directly after the original, before beta
+  assert.ok(
+    /- \[ \] alpha\n- \[ \] alpha\n- \[ \] beta/.test(saved),
+    `Duplicate not adjacent:\n${saved}`
+  );
+});
+
+test("context menu: move to top", () => {
+  openCardMenu("beta");
+  clickMenuItem("Move to top");
+  const saved = waitFor(
+    `read path="${ACTIONS_PATH}"`,
+    (c) => /## One\n- \[ \] beta/.test(c),
+    8000
+  );
+  assert.ok(saved.indexOf("beta") < saved.indexOf("alpha"), `beta should be first:\n${saved}`);
+});
+
+test("checkbox: toggling a card checkbox writes [x]", () => {
+  evaluate(
+    "const p = app.plugins.plugins['minimalist-kanban']; p.settings.showCheckboxes = true; p.saveSettings()"
+  );
+  waitForDom(".kb-item-checkbox", "4", 5000);
+
+  evaluate(`${findCard("beta")}.querySelector('.kb-item-checkbox').click()`);
+  const saved = waitFor(
+    `read path="${ACTIONS_PATH}"`,
+    (c) => c.includes("- [x] beta"),
+    8000
+  );
+  assert.ok(saved.includes("- [x] beta"), `Checkbox state not saved:\n${saved}`);
+
+  evaluate(
+    "const p = app.plugins.plugins['minimalist-kanban']; p.settings.showCheckboxes = false; p.saveSettings()"
+  );
+  waitFor('dev:dom selector=".kb-item-checkbox" total', (o) => o.includes("No elements found"), 5000);
+});
+
+test("lane rename via title edit", () => {
+  evaluate(
+    "[...document.querySelectorAll('.kb-lane-title')].find(t => t.textContent === 'Two').click()"
+  );
+  waitFor('dev:dom selector=".kb-lane-title-input" total', (o) => o.includes("1"), 3000);
+  evaluate([
+    "const inp = document.querySelector('.kb-lane-title-input')",
+    "inp.value = 'Renamed'",
+    "inp.dispatchEvent(new Event('input', {bubbles:true}))",
+    "inp.dispatchEvent(new FocusEvent('blur'))",
+  ].join("; "));
+  const saved = waitFor(`read path="${ACTIONS_PATH}"`, (c) => c.includes("## Renamed"), 8000);
+  assert.ok(!saved.includes("## Two"), `Old lane title still present:\n${saved}`);
+});
+
+test("archive card: undo restores it, redo-archive persists to file", () => {
+  // Archive gamma, then undo
+  openCardMenu("gamma");
+  clickMenuItem("Archive card");
+  waitForDom(".kb-undo-notice", "1", 3000);
+  const toastText = domTextAll(".kb-undo-notice");
+  assert.ok(toastText.includes("Card archived"), `Unexpected toast: ${toastText}`);
+  evaluate("document.querySelector('.kb-undo-btn').click()");
+  waitFor(
+    'dev:dom selector=".kb-item-title" text all',
+    (out) => out.includes("gamma"),
+    3000
+  );
+  let saved = waitFor(
+    `read path="${ACTIONS_PATH}"`,
+    (c) => c.includes("gamma") && !c.includes("## Archive"),
+    8000
+  );
+  assert.ok(/## Renamed\n- \[ \] gamma/.test(saved), `gamma not restored to its lane:\n${saved}`);
+
+  // Archive again, this time letting it stand; show the archive lane
+  evaluate(
+    "const p = app.plugins.plugins['minimalist-kanban']; p.settings.showArchive = true; p.saveSettings()"
+  );
+  sleep(300);
+  openCardMenu("gamma");
+  clickMenuItem("Archive card");
+  waitForDom(".kb-archive-lane", "1", 5000);
+  const archiveText = domTextAll(".kb-archive-lane");
+  assert.ok(archiveText.includes("gamma"), `Archive lane missing card: ${archiveText}`);
+
+  saved = waitFor(`read path="${ACTIONS_PATH}"`, (c) => c.includes("## Archive"), 8000);
+  assert.ok(
+    /---\n\n## Archive\n- \[ \] gamma/.test(saved),
+    `Archive section malformed:\n${saved}`
+  );
+});
+
+test("archive card: restore returns it to the last lane", () => {
+  evaluate("document.querySelector('.kb-archive-item .kb-menu-btn').click()");
+  sleep(300);
+  clickMenuItem("Restore card");
+  const saved = waitFor(
+    `read path="${ACTIONS_PATH}"`,
+    (c) => !c.includes("## Archive"),
+    8000
+  );
+  assert.ok(/## Renamed[\s\S]*- \[ \] gamma/.test(saved), `gamma not restored:\n${saved}`);
+
+  evaluate(
+    "const p = app.plugins.plugins['minimalist-kanban']; p.settings.showArchive = false; p.saveSettings()"
+  );
+});
+
+test("lane delete shows undo toast and restores lane with cards", () => {
+  // Delete the "Renamed" lane (holds gamma)
+  evaluate(
+    "[...document.querySelectorAll('.kb-lane')].find(l => l.querySelector('.kb-lane-title').textContent === 'Renamed').querySelector('.kb-lane-header .kb-menu-btn').click()"
+  );
+  sleep(300);
+  clickMenuItem("Delete list");
+  waitFor('dev:dom selector=".kb-lane" total', (o) => o.includes("1"), 5000);
+  waitFor(`read path="${ACTIONS_PATH}"`, (c) => !c.includes("## Renamed"), 8000);
+
+  waitForDom(".kb-undo-notice", "1", 3000);
+  const toastText = domTextAll(".kb-undo-notice");
+  assert.ok(toastText.includes('List "Renamed" deleted'), `Unexpected toast: ${toastText}`);
+  evaluate("document.querySelector('.kb-undo-btn').click()");
+  waitFor('dev:dom selector=".kb-lane" total', (o) => o.includes("2"), 5000);
+
+  const saved = waitFor(`read path="${ACTIONS_PATH}"`, (c) => c.includes("## Renamed"), 8000);
+  assert.ok(/## Renamed[\s\S]*- \[ \] gamma/.test(saved), `Lane restored without cards:\n${saved}`);
+
+  try { cli(`delete path="${ACTIONS_PATH}" permanent`); } catch { /* already gone */ }
 });
 
 // ── Cleanup ─────────────────────────────────────────────

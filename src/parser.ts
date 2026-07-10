@@ -1,4 +1,4 @@
-import { Board, Lane, Item, generateId } from "./types";
+import { Board, Lane, Item, ExtraBlock, generateId } from "./types";
 
 const FENCE = /^(```|~~~)/;
 const DEFAULT_FRONTMATTER = ["kanban-plugin: board"];
@@ -18,11 +18,13 @@ function isArchiveSeparator(lines: string[], idx: number): boolean {
 }
 
 export function parseBoard(markdown: string): Board {
-  const lines = markdown.split("\n");
+  // CRLF input is normalized to LF: the serializer joins with "\n", and
+  // verbatim-preserved lines or continuation text must not embed stray "\r".
+  const lines = markdown.split(/\r?\n/);
   const lanes: Lane[] = [];
   const archive: Item[] = [];
   const preamble: string[] = [];
-  const archiveExtra: string[] = [];
+  const archiveExtra: ExtraBlock[] = [];
   let frontmatter: string[] | undefined;
 
   let start = 0;
@@ -39,12 +41,19 @@ export function parseBoard(markdown: string): Board {
 
   let currentLane: Lane | null = null;
   let currentItem: Item | null = null;
+  let lastItem: Item | null = null;
   let inArchive = false;
+  let awaitingArchiveHeading = false;
   let inFence = false;
 
   const pushExtra = (line: string) => {
-    if (inArchive) archiveExtra.push(line);
-    else if (currentLane) currentLane.extra!.push(line);
+    const extra = inArchive ? archiveExtra : currentLane?.extra;
+    if (extra) {
+      const afterItemId = lastItem?.id;
+      const previous = extra[extra.length - 1];
+      if (previous && previous.afterItemId === afterItemId) previous.lines.push(line);
+      else extra.push({ afterItemId, lines: [line] });
+    }
     else preamble.push(line);
   };
 
@@ -61,9 +70,15 @@ export function parseBoard(markdown: string): Board {
 
     // Continuation line of the current item. This must run before the
     // structural checks below so card text containing "---", "## " or
-    // "```" lines can't corrupt the board on re-parse.
-    if (currentItem && trimmed && /^\s{2,}/.test(line)) {
-      currentItem.title += "\n" + trimmed;
+    // "```" lines can't corrupt the board on re-parse. A whitespace-only
+    // continuation ("  ") is a blank line inside the card — serializeItem
+    // emits one for each interior blank title line, so treating it as a
+    // card boundary here would split the card on reload.
+    if (currentItem && (line.startsWith("\t") || /^\s{2,}/.test(line))) {
+      // Remove only the tab or two spaces that make this a list
+      // continuation. Any additional indentation is card content (for
+      // example, an indented code block) and must survive a save unchanged.
+      currentItem.title += "\n" + (line.startsWith("\t") ? line.slice(1) : line.slice(2));
       continue;
     }
 
@@ -76,21 +91,29 @@ export function parseBoard(markdown: string): Board {
 
     if (trimmed === "---" && !inArchive && isArchiveSeparator(lines, i)) {
       inArchive = true;
+      awaitingArchiveHeading = true;
       currentLane = null;
       currentItem = null;
+      lastItem = null;
       continue;
     }
 
     // Lane headings
     if (trimmed.startsWith("## ")) {
       currentItem = null;
+      if (inArchive && awaitingArchiveHeading && /^##\s+archive\s*$/i.test(trimmed)) {
+        // Consume only the archive marker. Any later headings are user content.
+        awaitingArchiveHeading = false;
+        continue;
+      }
       if (inArchive) {
-        // Skip the "## Archive" heading itself; items below go to archive[]
+        pushExtra(line);
         continue;
       }
       const title = trimmed.substring(3).trim();
       currentLane = { id: generateId(), title, items: [], extra: [] };
       lanes.push(currentLane);
+      lastItem = null;
       continue;
     }
 
@@ -116,10 +139,26 @@ export function parseBoard(markdown: string): Board {
       if (inArchive) archive.push(newItem);
       else currentLane!.items.push(newItem);
       currentItem = newItem;
+      lastItem = newItem;
       continue;
     }
 
     if (trimmed === "") {
+      // Blank lines inside a lane/archive are meaningful Markdown spacing.
+      // Keep them as opaque content at their original anchor.
+      // The split produces a final empty element for a trailing newline;
+      // serialization supplies that newline itself, so do not turn it into a
+      // growing opaque block on every round-trip.
+      if (i !== lines.length - 1) {
+        if ((currentLane || inArchive) && !(inArchive && awaitingArchiveHeading)) {
+          pushExtra(line);
+        } else if (!currentLane && !inArchive && preamble.length > 0) {
+          // Interior preamble blanks separate paragraphs and must survive.
+          // Leading ones are skipped (and trailing ones popped below): that
+          // spacing is canonical and owned by serializeBoard.
+          preamble.push(line);
+        }
+      }
       currentItem = null;
       continue;
     }
@@ -128,6 +167,8 @@ export function parseBoard(markdown: string): Board {
     currentItem = null;
     pushExtra(line);
   }
+
+  while (preamble.length > 0 && preamble[preamble.length - 1] === "") preamble.pop();
 
   return { lanes, archive, frontmatter, preamble, archiveExtra };
 }
@@ -141,13 +182,14 @@ function serializeItem(lines: string[], item: Item) {
   }
 }
 
-/**
- * Push preserved extra lines, separated from any items above by a blank
- * line so an indented extra line can't merge into the last item on re-parse.
- */
-function serializeExtra(lines: string[], extra: string[] | undefined) {
-  if (extra && extra.length > 0) {
-    lines.push("", ...extra);
+/** Push opaque Markdown blocks at the same card-relative position. */
+function serializeExtra(
+  lines: string[],
+  extra: ExtraBlock[] | undefined,
+  afterItemId: string | undefined
+) {
+  for (const block of extra ?? []) {
+    if (block.afterItemId === afterItemId) lines.push(...block.lines);
   }
 }
 
@@ -161,21 +203,34 @@ export function serializeBoard(board: Board): string {
 
   for (const lane of board.lanes) {
     lines.push(`## ${lane.title}`);
+    serializeExtra(lines, lane.extra, undefined);
     for (const item of lane.items) {
       serializeItem(lines, item);
+      serializeExtra(lines, lane.extra, item.id);
     }
-    serializeExtra(lines, lane.extra);
-    lines.push("");
+    // Keep opaque blocks even if their former card was deleted or moved.
+    for (const block of lane.extra ?? []) {
+      if (block.afterItemId && !lane.items.some((item) => item.id === block.afterItemId)) {
+        lines.push(...block.lines);
+      }
+    }
+    if (lines[lines.length - 1] !== "") lines.push("");
   }
 
   const archiveExtra = board.archiveExtra ?? [];
   if (board.archive.length > 0 || archiveExtra.length > 0) {
     lines.push("---", "", "## Archive");
+    serializeExtra(lines, archiveExtra, undefined);
     for (const item of board.archive) {
       serializeItem(lines, item);
+      serializeExtra(lines, archiveExtra, item.id);
     }
-    serializeExtra(lines, archiveExtra);
-    lines.push("");
+    for (const block of archiveExtra) {
+      if (block.afterItemId && !board.archive.some((item) => item.id === block.afterItemId)) {
+        lines.push(...block.lines);
+      }
+    }
+    if (lines[lines.length - 1] !== "") lines.push("");
   }
 
   return lines.join("\n");

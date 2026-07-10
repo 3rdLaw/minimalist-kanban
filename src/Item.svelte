@@ -16,47 +16,67 @@
   let editInput;
   let titleEl;
   let lastRenderedTitle = "";
+  let renderVersion = 0;
   let linkSuggest;
 
-  async function renderMarkdown(el) {
+  function renderMarkdown(el) {
     if (!el || !app) return;
     if (lastRenderedTitle === item.title) return;
+    const version = ++renderVersion;
     lastRenderedTitle = item.title;
-    while (el.firstChild) el.removeChild(el.firstChild);
-    await MarkdownRenderer.render(app, item.title, el, filePath, viewComponent);
-    // Unwrap <p> tags for inline display — join with <br> to preserve line breaks
-    const paragraphs = el.querySelectorAll("p");
-    if (paragraphs.length > 0) {
-      const fragment = document.createDocumentFragment();
-      paragraphs.forEach((p, i) => {
-        if (i > 0) fragment.appendChild(document.createElement("br"));
-        fragment.append(...p.childNodes);
-      });
-      el.replaceChildren(fragment);
-    }
-    // Strip leading newlines from text nodes after <br> to avoid double breaks with pre-wrap
-    el.querySelectorAll("br").forEach((br) => {
-      const next = br.nextSibling;
-      if (next && next.nodeType === 3 && next.textContent) {
-        next.textContent = next.textContent.replace(/^\n/, "");
+    const title = item.title;
+    // Render off-DOM: an older asynchronous render must never be able to
+    // append stale content into the visible card while a newer one is pending.
+    const renderedEl = document.createElement("div");
+    const applyRender = () => {
+      if (version !== renderVersion || title !== item.title) return;
+      el.replaceChildren(...renderedEl.childNodes);
+      // Unwrap <p> tags for inline display — join with <br> to preserve line
+      // breaks. Only when every top-level block is a <p>: mixed output (a
+      // paragraph followed by a list, say) must keep its other blocks.
+      const blocks = Array.from(el.children);
+      if (blocks.length > 0 && blocks.every((b) => b.tagName === "P")) {
+        const fragment = document.createDocumentFragment();
+        blocks.forEach((p, i) => {
+          if (i > 0) fragment.appendChild(document.createElement("br"));
+          fragment.append(...p.childNodes);
+        });
+        el.replaceChildren(fragment);
       }
-    });
-    // Make internal links clickable (Ctrl/Cmd+Click opens in new tab)
-    el.querySelectorAll("a.internal-link").forEach((a) => {
-      a.addEventListener("click", (e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        const href = a.dataset.href || a.getAttribute("href");
-        const newTab = e.ctrlKey || e.metaKey;
-        app.workspace.openLinkText(href, filePath, newTab ? "tab" : false);
+      // Strip leading newlines from text nodes after <br> to avoid double breaks with pre-wrap
+      el.querySelectorAll("br").forEach((br) => {
+        const next = br.nextSibling;
+        if (next && next.nodeType === 3 && next.textContent) {
+          next.textContent = next.textContent.replace(/^\n/, "");
+        }
       });
-    });
-    // Make external links open in browser
-    el.querySelectorAll("a.external-link").forEach((a) => {
-      a.addEventListener("click", (e) => {
-        e.stopPropagation();
+      // Make internal links clickable (Ctrl/Cmd+Click opens in new tab)
+      el.querySelectorAll("a.internal-link").forEach((a) => {
+        a.addEventListener("click", (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          const href = a.dataset.href || a.getAttribute("href");
+          const newTab = e.ctrlKey || e.metaKey;
+          app.workspace.openLinkText(href, filePath, newTab ? "tab" : false);
+        });
       });
-    });
+      // Make external links open in browser
+      el.querySelectorAll("a.external-link").forEach((a) => {
+        a.addEventListener("click", (e) => {
+          e.stopPropagation();
+        });
+      });
+    };
+    const rendered = MarkdownRenderer.render(app, title, renderedEl, filePath, viewComponent);
+    if (rendered && typeof rendered.then === "function") {
+      rendered.then(applyRender, () => {
+        // Failed render: clear the memo (unless a newer render superseded
+        // this one) so the next update retries instead of staying blank.
+        if (version === renderVersion) lastRenderedTitle = "";
+      });
+    } else {
+      applyRender();
+    }
   }
 
   onMount(() => {

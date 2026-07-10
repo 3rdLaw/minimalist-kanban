@@ -4,5 +4,8 @@ coverage/
 main.js
 data.json
 bun.lockb
-tests/e2e/vault/
-tests/e2e/minimalist-kanban-vault/
+# The e2e vault is committed; ignore only per-machine/churn state
+tests/e2e/minimalist-kanban-vault/.obsidian/workspace.json
+tests/e2e/minimalist-kanban-vault/.obsidian/workspace-mobile.json
+tests/e2e/minimalist-kanban-vault/.obsidian/graph.json
+tests/e2e/minimalist-kanban-vault/.obsidian/plugins/

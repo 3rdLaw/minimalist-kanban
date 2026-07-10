@@ -455,6 +455,132 @@ describe("content preservation", () => {
     expect(serializeBoard(reparsed)).toBe(out);
   });
 
+  test("keeps unrecognized content between the cards it originally separated", () => {
+    const md = [
+      "---",
+      "kanban-plugin: board",
+      "---",
+      "",
+      "## Col",
+      "- first",
+      "> Supporting callout for first",
+      "- second",
+    ].join("\n");
+    const out = serializeBoard(parseBoard(md));
+    expect(out.indexOf("- [ ] first")).toBeLessThan(out.indexOf("> Supporting callout"));
+    expect(out.indexOf("> Supporting callout")).toBeLessThan(out.indexOf("- [ ] second"));
+  });
+
+  test("preserves blank lines and indentation inside a card", () => {
+    const md = [
+      "---",
+      "kanban-plugin: board",
+      "---",
+      "",
+      "## Col",
+      "- first",
+      "    indented code",
+      "",
+      "- second",
+    ].join("\n");
+    const out = serializeBoard(parseBoard(md));
+    expect(out).toContain("- [ ] first\n    indented code\n\n- [ ] second");
+  });
+
+  test("preserves headings written after the archive marker", () => {
+    const md = [
+      "---",
+      "kanban-plugin: board",
+      "---",
+      "",
+      "## Col",
+      "- active",
+      "---",
+      "## Archive",
+      "- old",
+      "## Archive notes",
+      "Retain this text.",
+    ].join("\n");
+    const out = serializeBoard(parseBoard(md));
+    expect(out).toContain("## Archive notes");
+    expect(out).toContain("Retain this text.");
+  });
+
+  test("a card with an interior blank line survives a save/reload cycle", () => {
+    // A user can type a blank line between paragraphs while editing a card;
+    // the blank continuation must not split the card on re-parse.
+    const board = parseBoard("---\nkanban-plugin: board\n---\n\n## Col\n- seed\n");
+    board.lanes[0].items[0].title = "para one\n\npara two";
+    const out = serializeBoard(board);
+    const reparsed = parseBoard(out);
+    expect(reparsed.lanes[0].items).toHaveLength(1);
+    expect(reparsed.lanes[0].items[0].title).toBe("para one\n\npara two");
+    expect(serializeBoard(reparsed)).toBe(out);
+  });
+
+  test("a whitespace-only indented line stays inside the card", () => {
+    const md = [
+      "---",
+      "kanban-plugin: board",
+      "---",
+      "",
+      "## Col",
+      "- first",
+      "  ",
+      "  more",
+      "- second",
+      "",
+    ].join("\n");
+    const board = parseBoard(md);
+    expect(board.lanes[0].items.map((i) => i.title)).toEqual([
+      "first\n\nmore",
+      "second",
+    ]);
+    const out = serializeBoard(board);
+    expect(out).toContain("- [ ] first\n  \n  more\n- [ ] second");
+    expect(serializeBoard(parseBoard(out))).toBe(out);
+  });
+
+  test("tab-indented continuation lines belong to the card", () => {
+    const md = "---\nkanban-plugin: board\n---\n\n## Col\n- first\n\tmore\n";
+    const board = parseBoard(md);
+    expect(board.lanes[0].items[0].title).toBe("first\nmore");
+    // Tab indentation normalizes to two spaces on the first save, then stable.
+    const out = serializeBoard(board);
+    expect(out).toContain("- [ ] first\n  more");
+    expect(serializeBoard(parseBoard(out))).toBe(out);
+  });
+
+  test("CRLF input parses cleanly and normalizes to LF on save", () => {
+    const md =
+      "---\r\nkanban-plugin: board\r\n---\r\n\r\n## Col\r\n- first\r\n  second\r\n\r\n> note\r\n";
+    const board = parseBoard(md);
+    expect(board.lanes[0].items[0].title).toBe("first\nsecond");
+    const out = serializeBoard(board);
+    expect(out).not.toContain("\r");
+    expect(out).toContain("- [ ] first\n  second\n\n> note");
+    expect(serializeBoard(parseBoard(out))).toBe(out);
+  });
+
+  test("blank lines between preamble paragraphs survive a save", () => {
+    const md = [
+      "---",
+      "kanban-plugin: board",
+      "---",
+      "",
+      "Intro paragraph one.",
+      "",
+      "Intro paragraph two.",
+      "",
+      "## Col",
+      "- a",
+      "",
+    ].join("\n");
+    const out = serializeBoard(parseBoard(md));
+    expect(out).toContain("Intro paragraph one.\n\nIntro paragraph two.");
+    expect(serializeBoard(parseBoard(out))).toBe(out);
+  });
+
   test("empty checkbox lines are preserved rather than dropped", () => {
     const md = "---\nkanban-plugin: board\n---\n\n## Col\n- [ ]\n";
     const board = parseBoard(md);
@@ -481,7 +607,9 @@ describe("content preservation", () => {
     ].join("\n");
     const board = parseBoard(md);
     expect(board.archive).toHaveLength(1);
-    expect(board.archiveExtra).toEqual(["a note about the archive"]);
+    expect(board.archiveExtra?.flatMap((block) => block.lines)).toContain(
+      "a note about the archive"
+    );
     const out = serializeBoard(board);
     expect(out).toContain("a note about the archive");
     expect(serializeBoard(parseBoard(out))).toBe(out);

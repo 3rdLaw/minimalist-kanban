@@ -1,6 +1,7 @@
 import { describe, test, expect, vi } from "vitest";
 import { render, fireEvent } from "@testing-library/svelte";
-import { Platform } from "obsidian";
+import { tick } from "svelte";
+import { MarkdownRenderer, Platform } from "obsidian";
 import Item from "../src/Item.svelte";
 
 const defaultSettings = {
@@ -156,6 +157,52 @@ describe("Item", () => {
     await fireEvent.click(container.querySelector(".kb-menu-btn")!);
     expect(handler).toHaveBeenCalled();
     expect(handler.mock.calls[0][0].detail.itemId).toBe("item-1");
+  });
+
+  test("keeps non-paragraph blocks when rendering mixed content", async () => {
+    // A card like "intro\n- point" renders as <p> + <ul>; the inline <p>
+    // unwrapping must not discard the list.
+    const spy = vi
+      .spyOn(MarkdownRenderer, "render")
+      .mockImplementation((_app, _md, el: HTMLElement) => {
+        const p = document.createElement("p");
+        p.textContent = "intro";
+        const ul = document.createElement("ul");
+        const li = document.createElement("li");
+        li.textContent = "point";
+        ul.appendChild(li);
+        el.appendChild(p);
+        el.appendChild(ul);
+        return Promise.resolve();
+      });
+    try {
+      const { container } = renderItem({ title: "intro\n- point" });
+      await new Promise((r) => setTimeout(r, 10));
+      const el = container.querySelector(".kb-item-title")!;
+      expect(el.querySelector("ul li")?.textContent).toBe("point");
+      expect(el.textContent).toContain("intro");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test("retries rendering after a failed render", async () => {
+    const spy = vi
+      .spyOn(MarkdownRenderer, "render")
+      .mockImplementationOnce(() => Promise.reject(new Error("render failed")));
+    try {
+      const { container, component } = renderItem({ title: "hello" });
+      // Let the rejected render settle.
+      await new Promise((r) => setTimeout(r, 10));
+      // Any later update pass must retry rather than stay blank forever.
+      component.$set({ settings: { ...defaultSettings } });
+      await tick();
+      await new Promise((r) => setTimeout(r, 10));
+      const el = container.querySelector(".kb-item-title")!;
+      expect(el.textContent).toBe("hello");
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   // ── Ctrl+Click link navigation ────────────────────────

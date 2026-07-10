@@ -4,12 +4,22 @@ export interface Item {
   checked: boolean;
 }
 
+/**
+ * Markdown which the board UI does not interpret.  It is anchored to the
+ * preceding card so saving a board does not move a note or callout past later
+ * cards in the same lane.
+ */
+export interface ExtraBlock {
+  afterItemId?: string;
+  lines: string[];
+}
+
 export interface Lane {
   id: string;
   title: string;
   items: Item[];
-  /** Unrecognized markdown lines under this lane, preserved verbatim. */
-  extra?: string[];
+  /** Unrecognized markdown under this lane, preserved in document order. */
+  extra?: ExtraBlock[];
 }
 
 export interface Board {
@@ -19,8 +29,8 @@ export interface Board {
   frontmatter?: string[];
   /** Unrecognized lines between the frontmatter and the first lane heading. */
   preamble?: string[];
-  /** Unrecognized lines in the archive section. */
-  archiveExtra?: string[];
+  /** Unrecognized markdown in the archive section, preserved in document order. */
+  archiveExtra?: ExtraBlock[];
 }
 
 let counter = 0;

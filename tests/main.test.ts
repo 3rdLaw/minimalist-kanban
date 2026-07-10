@@ -96,6 +96,42 @@ describe("checkIsKanban", () => {
     await expect((plugin as any).checkIsKanban("Board.md")).resolves.toBe(true);
   });
 
+  test("recognizes CRLF and quoted board frontmatter on a cache miss", async () => {
+    const { plugin, app } = await makePlugin();
+    app.vault.getAbstractFileByPath.mockReturnValue(tfile("Board.md"));
+    app.vault.cachedRead.mockResolvedValue(
+      "---\r\nkanban-plugin: \"board\"\r\n---\r\n\r\n## A\r\n"
+    );
+    await expect((plugin as any).checkIsKanban("Board.md")).resolves.toBe(true);
+  });
+
+  test("accepts trailing spaces on frontmatter delimiters", async () => {
+    const { plugin, app } = await makePlugin();
+    app.vault.getAbstractFileByPath.mockReturnValue(tfile("Board.md"));
+    app.vault.cachedRead.mockResolvedValue(
+      "--- \nkanban-plugin: board\n--- \n\n## A\n"
+    );
+    await expect((plugin as any).checkIsKanban("Board.md")).resolves.toBe(true);
+  });
+
+  test("does not capture body text past a space-padded frontmatter closer", async () => {
+    const { plugin, app } = await makePlugin();
+    app.vault.getAbstractFileByPath.mockReturnValue(tfile("Note.md"));
+    // "--- " closes the frontmatter; the body mention of kanban-plugin and
+    // the later "---" rule must not be swept into the frontmatter capture.
+    app.vault.cachedRead.mockResolvedValue(
+      "---\ntitle: x\n--- \n\nkanban-plugin: board\n\n---\n"
+    );
+    await expect((plugin as any).checkIsKanban("Note.md")).resolves.toBe(false);
+  });
+
+  test("does not treat a frontmatter comment as a board declaration", async () => {
+    const { plugin, app } = await makePlugin();
+    app.vault.getAbstractFileByPath.mockReturnValue(tfile("Note.md"));
+    app.vault.cachedRead.mockResolvedValue("---\n# kanban-plugin: board\n---\n");
+    await expect((plugin as any).checkIsKanban("Note.md")).resolves.toBe(false);
+  });
+
   test("false when content has no kanban frontmatter", async () => {
     const { plugin, app } = await makePlugin();
     app.vault.getAbstractFileByPath.mockReturnValue(tfile("Note.md"));

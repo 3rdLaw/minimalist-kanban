@@ -47,7 +47,7 @@ The plugin intercepts `setViewState` on all workspace leaves so that opening suc
 |---|---|
 | `main.ts` | Plugin entry point. Registers view, commands ("Create new Kanban board", "Toggle Kanban/Markdown view"), settings tab, and the `setViewState` monkey-patch for auto-redirect. |
 | `KanbanView.ts` | `TextFileView` subclass. Bridges Obsidian's file I/O with the Svelte component tree. Calls `parseBoard`/`serializeBoard` and mounts `Board.svelte`. |
-| `parser.ts` | Pure-function Markdown ↔ Board serialization. Parses `## ` headings as lanes, `- ` items as cards (with optional `[ ]`/`[x]` checkboxes), supports multi-line card text (indented continuation), and an archive section delimited by `---` followed by `## Archive`. Everything else — frontmatter (including user keys), text before the first lane, code fences, unrecognized lines — is preserved verbatim and re-emitted on save. Card text containing `---`/`## ` lines is escaped via indentation and cannot corrupt the board structure. |
+| `parser.ts` | Pure-function Markdown ↔ Board serialization. Parses `## ` headings as lanes, `- ` items as cards (with optional `[ ]`/`[x]` checkboxes), supports multi-line card text (indented continuation, including tab-indented and interior blank lines), and an archive section delimited by `---` followed by `## Archive`. Opaque Markdown is preserved in card-relative blocks so notes, code fences, and other unrecognized content are not moved past later cards on save; blank lines between preamble paragraphs also survive. CRLF input is normalized to LF. Card text containing `---`/`## ` lines is escaped via indentation and cannot corrupt the board structure. |
 | `types.ts` | TypeScript interfaces: `Board`, `Lane`, `Item`, plus `generateId()`. |
 | `settings.ts` | `KBSettings` interface, defaults, and `PluginSettingTab` implementation. Three settings: show checkboxes, enter-key behavior, prepend new cards. |
 | `sortable.ts` | Thin wrapper (`getSortable()`) that returns either the real SortableJS constructor or a test mock injected via `globalThis.__TEST_SORTABLE__`. |
@@ -135,34 +135,36 @@ npm run test:coverage
 npx vitest run tests/parser.test.ts
 ```
 
-The test suite has ~196 tests across 8 files. All tests run in jsdom with mocked Obsidian API and SortableJS.
+The test suite has ~210 tests across 8 files. All tests run in jsdom with mocked Obsidian API and SortableJS.
 
 ### E2E tests
 
-E2E tests drive a live Obsidian instance via the [Obsidian CLI](https://obsidian.md/help/Extending+Obsidian/Obsidian+CLI) (requires Obsidian 1.12+). They verify that the plugin loads, renders boards, and round-trips file content inside the real app.
+E2E tests drive a live Obsidian instance via the [Obsidian CLI](https://obsidian.md/help/Extending+Obsidian/Obsidian+CLI) (requires Obsidian 1.12+). They verify that the plugin loads, renders boards, round-trips file content, and handles drag-and-drop, context-menu actions, the archive flow, and undo toasts inside the real app.
+
+The test vault is committed to the repo at `tests/e2e/minimalist-kanban-vault/` (only per-machine state — `workspace*.json`, `graph.json`, and the `plugins/` symlink — is gitignored). Its directory basename is the vault name the CLI addresses.
 
 **One-time setup:**
 
 ```bash
-# Build the plugin and create the test vault with a symlinked plugin
+# Build the plugin and symlink it into the vault
 ./tests/e2e/setup.sh
 
-# Open the test vault in Obsidian (vault switcher → Open folder as vault)
-# Point it to: tests/e2e/vault/
+# Register the vault with Obsidian (vault switcher → Open folder as vault)
+# Point it to: tests/e2e/minimalist-kanban-vault/
 
 # Disable restricted mode and enable the "Minimalist Kanban" plugin, or via CLI:
-obsidian vault="<vault-name>" plugins:restrict off
-obsidian vault="<vault-name>" plugin:enable id=minimalist-kanban
+obsidian vault=minimalist-kanban-vault plugins:restrict off
+obsidian vault=minimalist-kanban-vault plugin:enable id=minimalist-kanban
 ```
 
 **Running:**
 
 ```bash
-# Obsidian must be running with the test vault open
+# Obsidian must be running
 npm run test:e2e
 ```
 
-The e2e tests use `npx tsx` to run a plain Node script that calls the Obsidian CLI via `child_process.execSync`. Each CLI call takes ~400ms; the full suite runs in about 4 seconds. The test vault name defaults to `kb-test-plugin-vault` and can be overridden with the `OBSIDIAN_E2E_VAULT` environment variable.
+The e2e tests use `npx tsx` to run a plain Node script that calls the Obsidian CLI via `child_process.execSync`. Each CLI call takes ~400ms; the full suite runs in a few minutes. The test vault name defaults to `minimalist-kanban-vault` and can be overridden with the `OBSIDIAN_E2E_VAULT` environment variable. Drag-and-drop is simulated with staged synthetic events (pointerdown → dragstart → dragover → drop) because SortableJS uses native HTML5 DnD in Electron; see `synthDrag` in `sanity.e2e.ts`.
 
 ## Building the plugin
 

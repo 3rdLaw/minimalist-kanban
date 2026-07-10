@@ -6,7 +6,7 @@ import type { KBSettings } from "./settings";
 
 export default class KanbanBoardPlugin extends Plugin {
   settings: KBSettings = { ...DEFAULT_SETTINGS };
-  private bypassRedirect = false;
+  private bypassRedirectLeaves = new WeakSet<WorkspaceLeaf>();
 
   async onload() {
     await this.loadSettings();
@@ -64,7 +64,7 @@ export default class KanbanBoardPlugin extends Plugin {
   }
 
   private patchSetViewState() {
-    const isBypassed = () => this.bypassRedirect;
+    const isBypassed = (leaf: WorkspaceLeaf) => this.bypassRedirectLeaves.has(leaf);
     const checkIsKanban = (path: string) => this.checkIsKanban(path);
 
     type SetViewStateFn = (viewState: ViewState, eState?: unknown) => Promise<void>;
@@ -80,7 +80,7 @@ export default class KanbanBoardPlugin extends Plugin {
             eState?: unknown
           ): Promise<void> {
             if (
-              !isBypassed() &&
+              !isBypassed(this) &&
               state.type === "markdown" &&
               state.state?.file
             ) {
@@ -120,8 +120,12 @@ export default class KanbanBoardPlugin extends Plugin {
 
     try {
       const content = await this.app.vault.cachedRead(file);
-      const fm = content.match(/^---\n([\s\S]*?)\n---/);
-      return fm?.[1]?.includes("kanban-plugin: board") ?? false;
+      // Delimiters tolerate trailing spaces; otherwise the lazy match could
+      // run past an unrecognized closer and capture body text as frontmatter.
+      const fm = content.match(/^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/);
+      return /(?:^|\r?\n)kanban-plugin\s*:\s*(?:board|"board"|'board')\s*(?=\r?$|\r?\n)/.test(
+        fm?.[1] ?? ""
+      );
     } catch {
       return false;
     }
@@ -162,7 +166,7 @@ export default class KanbanBoardPlugin extends Plugin {
 
     const isKanban = view instanceof KanbanView;
 
-    this.bypassRedirect = true;
+    this.bypassRedirectLeaves.add(leaf);
     try {
       if (isKanban) {
         await leaf.setViewState({
@@ -176,7 +180,7 @@ export default class KanbanBoardPlugin extends Plugin {
         });
       }
     } finally {
-      this.bypassRedirect = false;
+      this.bypassRedirectLeaves.delete(leaf);
     }
   }
 
