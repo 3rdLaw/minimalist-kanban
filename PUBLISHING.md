@@ -14,7 +14,7 @@ Run the Obsidian ESLint plugin to catch review-bot issues before submitting:
 npm run lint
 ```
 
-This runs `eslint-plugin-obsidianmd` with the recommended ruleset, checking for sentence case, forbidden APIs, `any` types, and other Obsidian plugin guidelines.
+This runs `eslint-plugin-obsidianmd` with the recommended ruleset, checking for sentence case, forbidden APIs, `any` types, and other Obsidian plugin guidelines. It then runs `npm run check` (svelte-check), which type-checks the `.svelte` component scripts against the Obsidian typings — the only thing that catches a call to an API Obsidian no longer publishes.
 
 ## Unit tests
 
@@ -26,7 +26,7 @@ npm test
 npx vitest run tests/parser.test.ts
 ```
 
-80 tests across 4 files (parser, item, lane, board). All run in jsdom with mocked Obsidian API and SortableJS.
+304 tests across 9 files (parser, parser properties, item, lane, board, link-suggest, main, kanban-view, settings). All run in jsdom with mocked Obsidian API and SortableJS.
 
 ## E2E tests
 
@@ -49,7 +49,17 @@ npm run test:e2e
 
 ## Creating a release
 
-1. Update `version` in both `manifest.json` and `package.json` to the new version (must follow semver `x.y.z`).
+1. Bump the version. `npm version` writes `package.json` and `package-lock.json`, then runs `version-bump.mjs` (npm's `version` lifecycle script) to carry the new version into `manifest.json` and add a `versions.json` entry pointing at the current `minAppVersion`:
+
+   ```bash
+   npm version --no-git-tag-version minor   # or patch / major
+   ```
+
+   `--no-git-tag-version` leaves the commit and tag to you. It touches four files but only stages two: `version-bump.mjs` runs `git add manifest.json versions.json`, so `package.json` and `package-lock.json` are left modified but unstaged.
+
+   Dropping the flag lets npm commit and tag in one step, but it requires a clean working tree and tags as `v0.10.0` — this repo's existing tags have no `v`. Run `npm config set tag-version-prefix ""` once if you want that form.
+
+   If a release needs a **higher** `minAppVersion`, edit `manifest.json` first: `version-bump.mjs` copies whatever is in `minAppVersion` into the new `versions.json` entry. Obsidian reads `versions.json` to offer installations older than the current minimum the newest plugin version they can still run, so past entries must not be rewritten.
 
 2. Build the production bundle:
 

@@ -1,11 +1,12 @@
 {
   "name": "minimalist-kanban",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Minimalist markdown-backed Kanban boards for Obsidian",
   "license": "MIT",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
+    "version": "node version-bump.mjs && git add manifest.json versions.json",
     "build": "node esbuild.config.mjs production",
     "lint": "eslint src/ && npm run check",
     "check": "svelte-check --tsconfig ./tsconfig.check.json --threshold error",

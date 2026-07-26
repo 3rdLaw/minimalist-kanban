@@ -62,6 +62,8 @@ The plugin intercepts `setViewState` on all workspace leaves so that opening suc
 |---|---|
 | `esbuild.config.mjs` | Build script using esbuild + `esbuild-svelte`. Bundles `src/main.ts` → `main.js` (CJS, es2018 target). Externalizes `obsidian`, `electron`, CodeMirror, and Node builtins. |
 | `manifest.json` | Obsidian plugin manifest. |
+| `version-bump.mjs` | Run by npm's `version` lifecycle script (`npm version <patch\|minor\|major>`). Copies the new version into `manifest.json` and appends a `versions.json` entry. From `obsidianmd/obsidian-sample-plugin`, adapted to write 2-space JSON instead of tabs. |
+| `versions.json` | Maps each released plugin version to the `minAppVersion` it requires, so Obsidian installations older than the current minimum are offered the newest version they can run. |
 | `styles.css` | Plugin stylesheet, loaded by Obsidian automatically. |
 | `tsconfig.json` | TypeScript configuration. |
 | `tsconfig.check.json` | Config for `npm run check` (svelte-check). Adds `checkJs` over the `.svelte` files, whose scripts are plain JavaScript and would otherwise call the Obsidian API unchecked. `noImplicitAny` is off because the components' props are untyped. |
