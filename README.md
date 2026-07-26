@@ -76,6 +76,7 @@ A few things to note:
 | Show checkboxes | Off | Display checkboxes on cards in the board UI |
 | Enter key adds new line | Off | When on, Enter adds a new line and Shift+Enter submits. When off, the behavior is reversed. |
 | Prepend new cards | Off | Add new cards to the top of the list instead of the bottom |
+| Show archive list | Off | Display the archive list on boards that have archived cards |
 
 ## Building from source
 
@@ -83,7 +84,8 @@ A few things to note:
 npm install
 npm run build     # Production build → main.js
 npm run dev       # Watch mode with source maps
-npm test          # Run unit tests (80 tests)
+npm test          # Run unit tests
+npm run lint      # ESLint + svelte-check
 npm run test:e2e  # Run e2e tests (requires Obsidian 1.12+ with CLI)
 ```
 

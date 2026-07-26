@@ -47,9 +47,9 @@ The plugin intercepts `setViewState` on all workspace leaves so that opening suc
 |---|---|
 | `main.ts` | Plugin entry point. Registers view, commands ("Create new Kanban board", "Toggle Kanban/Markdown view"), settings tab, and the `setViewState` monkey-patch for auto-redirect. |
 | `KanbanView.ts` | `TextFileView` subclass. Bridges Obsidian's file I/O with the Svelte component tree. Calls `parseBoard`/`serializeBoard` and mounts `Board.svelte`. |
-| `parser.ts` | Pure-function Markdown ↔ Board serialization. Parses `## ` headings as lanes, `- ` items as cards (with optional `[ ]`/`[x]` checkboxes), supports multi-line card text (indented continuation, including tab-indented and interior blank lines), and an archive section delimited by `---` followed by `## Archive`. Opaque Markdown is preserved in card-relative blocks so notes, code fences, and other unrecognized content are not moved past later cards on save; blank lines between preamble paragraphs also survive. CRLF input is normalized to LF. Card text containing `---`/`## ` lines is escaped via indentation and cannot corrupt the board structure. |
+| `parser.ts` | Pure-function Markdown ↔ Board serialization. Parses `## ` headings as lanes, `- ` items as cards (with optional `[ ]`/`[x]` checkboxes), supports multi-line card text (indented continuation, including tab-indented and interior blank lines), and an archive section delimited by `---` followed by `## Archive`. Opaque Markdown is preserved in card-relative blocks so notes, code fences, and other unrecognized content are not moved past later cards on save; blank lines between preamble paragraphs also survive. CRLF input is normalized to LF. Card text containing `---`/`## ` lines is escaped via indentation and cannot corrupt the board structure. Board syntax is column-sensitive in the CommonMark sense: a heading, card, fence or archive marker is only recognized within three spaces of the left margin, so indented code blocks stay opaque. |
 | `types.ts` | TypeScript interfaces: `Board`, `Lane`, `Item`, plus `generateId()`. |
-| `settings.ts` | `KBSettings` interface, defaults, and `PluginSettingTab` implementation. Three settings: show checkboxes, enter-key behavior, prepend new cards. |
+| `settings.ts` | `KBSettings` interface, defaults, and `PluginSettingTab` implementation. Four settings: show checkboxes, enter-key behavior, prepend new cards, show archive list. |
 | `sortable.ts` | Thin wrapper (`getSortable()`) that returns either the real SortableJS constructor or a test mock injected via `globalThis.__TEST_SORTABLE__`. |
 | `Board.svelte` | Top-level Svelte component. Owns the `board` data, creates a lane-level SortableJS instance for drag-reordering lanes, and dispatches `onChange` to persist changes. Handles all lane/item events and the card context menu (edit, duplicate, move, archive, delete, new note from card). |
 | `Lane.svelte` | Renders a single lane: title (inline-editable), item list, and a footer textarea for adding cards. Creates an item-level SortableJS instance with `group: "kb-items"` for cross-lane drag-and-drop. Undoes SortableJS DOM mutations in `onEnd` so Svelte stays in control of the DOM. |
@@ -64,6 +64,7 @@ The plugin intercepts `setViewState` on all workspace leaves so that opening suc
 | `manifest.json` | Obsidian plugin manifest. |
 | `styles.css` | Plugin stylesheet, loaded by Obsidian automatically. |
 | `tsconfig.json` | TypeScript configuration. |
+| `tsconfig.check.json` | Config for `npm run check` (svelte-check). Adds `checkJs` over the `.svelte` files, whose scripts are plain JavaScript and would otherwise call the Obsidian API unchecked. `noImplicitAny` is off because the components' props are untyped. |
 | `package.json` | Dependencies and scripts. |
 
 ### Tests (`tests/`)
@@ -72,6 +73,7 @@ The plugin intercepts `setViewState` on all workspace leaves so that opening suc
 |---|---|
 | `setup.ts` | Vitest setup: loads `@testing-library/jest-dom` matchers, injects `SortableMock` via `globalThis.__TEST_SORTABLE__`, stubs Obsidian's `HTMLElement` helpers (`empty`, `addClass`, `createEl`, `setCssProps`), resets mock state between tests. |
 | `parser.test.ts` | `parseBoard`/`serializeBoard`: frontmatter, lanes, items, checkboxes, multi-line cards, archive, round-trip fidelity, structure-injection resistance (cards containing `---`/`## `), and content preservation (user frontmatter, preamble, code fences, unrecognized lines). |
+| `parser-properties.test.ts` | The parser's two invariants, asserted over a corpus of adversarial documents and 300 seeded fuzz documents: one save is a fixed point, and any line not recognized as board syntax is re-emitted byte-for-byte. |
 | `item.test.ts` | `Item.svelte`: rendering, inline editing, keyboard handling, checkbox toggle, enter/shift+enter behavior with settings, link-suggest cleanup on unmount. |
 | `lane.test.ts` | `Lane.svelte`: rendering, adding items, lane title editing, context menu, SortableJS initialization and configuration. |
 | `board.test.ts` | `Board.svelte`: adding lanes/items, deleting, renaming, moving lanes, card context menu actions (duplicate, move to top/bottom, move to list, archive), drag-and-drop via SortableJS `onEnd` simulation, new note from card, per-action undo toasts. |
