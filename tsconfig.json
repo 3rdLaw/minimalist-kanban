@@ -3,7 +3,7 @@
     "target": "es2018",
     "module": "ESNext",
     "moduleResolution": "node",
-    "lib": ["dom", "es2018"],
+    "lib": ["dom", "dom.iterable", "es2018"],
     "strict": true,
     "skipLibCheck": true,
     "inlineSourceMap": true,

@@ -2,7 +2,7 @@ import { describe, test, expect, vi, beforeEach } from "vitest";
 import { render, fireEvent } from "@testing-library/svelte";
 import { tick } from "svelte";
 import Board from "../src/Board.svelte";
-import { Menu, Notice, Platform } from "obsidian";
+import { Menu, MenuItem, Notice, Platform } from "obsidian";
 import SortableMock from "./mocks/sortablejs";
 import type { Board as BoardType } from "../src/types";
 
@@ -457,6 +457,64 @@ describe("Board mobile behavior", () => {
     expect(laneItems).toHaveLength(2);
 
     Platform.isPhone = false; // reset
+  });
+});
+
+// ── Undocumented API fallback ────────────────────────────
+
+/**
+ * `MenuItem.setSubmenu()` is not in Obsidian's published typings. It works
+ * today, but if a future release drops it the menus must degrade to the flat
+ * list rather than throw.
+ */
+describe("submenu feature detection", () => {
+  type MockMenuItem = InstanceType<typeof import("./mocks/obsidian").MenuItem>;
+
+  function titlesOf(menu: Menu) {
+    return menu.items
+      .filter((i): i is MockMenuItem => "_title" in i)
+      .map((i) => i._title);
+  }
+
+  test("falls back to a flat menu when setSubmenu is unavailable", async () => {
+    const original = MenuItem.prototype.setSubmenu;
+    // Simulate an Obsidian build without the undocumented method.
+    delete (MenuItem.prototype as Partial<MockMenuItem>).setSubmenu;
+    try {
+      const { container, onChange } = renderBoard();
+      const menuBtns = container.querySelectorAll(".kb-item .kb-menu-btn");
+      await fireEvent.click(menuBtns[0]);
+      const menu = Menu.instances[Menu.instances.length - 1];
+
+      expect(menu.findItem("Move to list")!._submenu).toBeNull();
+      expect(titlesOf(menu)).toEqual(expect.arrayContaining(["To Do", "Done"]));
+
+      // ...and the flattened entries still move the card.
+      menu.findItem("Done")!._onClick!();
+      const updated = onChange.mock.calls[0][0] as BoardType;
+      expect(updated.lanes[0].items.map((i) => i.title)).toEqual(["Task B"]);
+      expect(updated.lanes[1].items.map((i) => i.title)).toEqual(["Task C", "Task A"]);
+    } finally {
+      MenuItem.prototype.setSubmenu = original;
+    }
+  });
+
+  test("falls back for the archive Restore to list menu too", async () => {
+    const original = MenuItem.prototype.setSubmenu;
+    delete (MenuItem.prototype as Partial<MockMenuItem>).setSubmenu;
+    try {
+      const { container } = renderBoard(
+        { archive: [{ id: "a1", title: "Archived A", checked: false }] },
+        { showArchive: true }
+      );
+      await fireEvent.click(container.querySelector(".kb-archive-lane .kb-menu-btn")!);
+      const menu = Menu.instances[Menu.instances.length - 1];
+
+      expect(menu.findItem("Restore to list")!._submenu).toBeNull();
+      expect(titlesOf(menu)).toEqual(expect.arrayContaining(["To Do", "Done"]));
+    } finally {
+      MenuItem.prototype.setSubmenu = original;
+    }
   });
 });
 

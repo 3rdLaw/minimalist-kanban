@@ -37,6 +37,7 @@
       touchStartThreshold: 5,
       onEnd(evt) {
         const { from, to, oldIndex, newIndex, item: el } = evt;
+        if (oldIndex == null || newIndex == null) return;
 
         // Undo SortableJS DOM manipulation so Svelte stays in control
         if (from !== to) {

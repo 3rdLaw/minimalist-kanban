@@ -28,7 +28,7 @@
       direction: "horizontal",
       onEnd(evt) {
         const { oldIndex, newIndex, item: el } = evt;
-        if (oldIndex === newIndex) return;
+        if (oldIndex == null || newIndex == null || oldIndex === newIndex) return;
 
         if (oldIndex < newIndex) {
           boardEl.insertBefore(el, boardEl.children[oldIndex]);
@@ -128,6 +128,18 @@
       }
     });
     el.appendChild(btn);
+  }
+
+  /**
+   * `MenuItem.setSubmenu()` is absent from Obsidian's published typings, so
+   * it can change or disappear without a deprecation. Feature-detect it and
+   * fall back to the flat list phones already use.
+   */
+  function submenuFor(item, fallback) {
+    /** @type {{ setSubmenu?: () => import("obsidian").Menu }} */
+    const maybeNested = item;
+    if (Platform.isPhone || typeof maybeNested.setSubmenu !== "function") return fallback;
+    return maybeNested.setSubmenu();
   }
 
   function addLane() {
@@ -339,11 +351,7 @@
           }
         };
 
-        if (Platform.isPhone) {
-          addLaneItems(menu);
-        } else {
-          addLaneItems(i.setSubmenu());
-        }
+        addLaneItems(submenuFor(i, menu));
       });
     }
 
@@ -452,11 +460,7 @@
           }
         };
 
-        if (Platform.isPhone) {
-          addLaneItems(menu);
-        } else {
-          addLaneItems(i.setSubmenu());
-        }
+        addLaneItems(submenuFor(i, menu));
       });
     }
 
