@@ -1,7 +1,44 @@
 import { Board, Lane, Item, ExtraBlock, generateId } from "./types";
 
-const FENCE = /^(```|~~~)/;
 const DEFAULT_FRONTMATTER = ["kanban-plugin: board"];
+const ARCHIVE_HEADING = /^##\s+archive\s*$/i;
+/** Frontmatter delimiters are column-zero only; trailing whitespace is tolerated. */
+const FRONTMATTER_DELIM = /^---[ \t]*$/;
+
+/**
+ * Board syntax is column-sensitive. CommonMark allows up to three leading
+ * spaces on ATX headings, list items, thematic breaks and fences; four or
+ * more spaces — or any leading tab — makes the line an indented code block.
+ * That is opaque content and must survive a save byte-for-byte, so it is
+ * never promoted into a lane, a card or an archive marker.
+ */
+function isStructural(line: string): boolean {
+  const indent = line.length - line.trimStart().length;
+  return indent <= 3 && !line.slice(0, indent).includes("\t");
+}
+
+interface Fence {
+  char: string;
+  len: number;
+}
+
+/**
+ * A fence is a run of at least three backticks or tildes. The closing fence
+ * must use the same character, be at least as long as the opener, and carry
+ * no info string — otherwise a `~~~` inside a ``` block would end it early
+ * and expose the code as board structure.
+ */
+function fenceRun(trimmed: string): { fence: Fence; info: string } | null {
+  const m = trimmed.match(/^(`{3,}|~{3,})(.*)$/);
+  if (!m) return null;
+  return { fence: { char: m[1][0], len: m[1].length }, info: m[2] };
+}
+
+function closesFence(open: Fence, run: { fence: Fence; info: string }): boolean {
+  return (
+    run.fence.char === open.char && run.fence.len >= open.len && run.info.trim() === ""
+  );
+}
 
 /**
  * `---` only starts the archive section when the next non-blank line
@@ -10,9 +47,9 @@ const DEFAULT_FRONTMATTER = ["kanban-plugin: board"];
  */
 function isArchiveSeparator(lines: string[], idx: number): boolean {
   for (let j = idx + 1; j < lines.length; j++) {
-    const t = lines[j].trim();
-    if (t === "") continue;
-    return /^##\s+archive\s*$/i.test(t);
+    const line = lines[j];
+    if (line.trim() === "") continue;
+    return isStructural(line) && ARCHIVE_HEADING.test(line.trim());
   }
   return false;
 }
@@ -28,10 +65,12 @@ export function parseBoard(markdown: string): Board {
   let frontmatter: string[] | undefined;
 
   let start = 0;
-  // Frontmatter is only valid at the very start of the document
-  if (lines.length > 0 && lines[0].trim() === "---") {
+  // Frontmatter is only valid at the very start of the document. Both
+  // delimiters must sit at column zero: an indented `---` is ordinary scalar
+  // content inside a YAML block, not the end of the block.
+  if (lines.length > 0 && FRONTMATTER_DELIM.test(lines[0])) {
     for (let j = 1; j < lines.length; j++) {
-      if (lines[j].trim() === "---") {
+      if (FRONTMATTER_DELIM.test(lines[j])) {
         frontmatter = lines.slice(1, j);
         start = j + 1;
         break;
@@ -44,7 +83,7 @@ export function parseBoard(markdown: string): Board {
   let lastItem: Item | null = null;
   let inArchive = false;
   let awaitingArchiveHeading = false;
-  let inFence = false;
+  let openFence: Fence | null = null;
 
   const pushExtra = (line: string) => {
     const extra = inArchive ? archiveExtra : currentLane?.extra;
@@ -60,11 +99,17 @@ export function parseBoard(markdown: string): Board {
   for (let i = start; i < lines.length; i++) {
     const line = lines[i];
     const trimmed = line.trim();
+    // Only lines at the left margin (per CommonMark, up to three spaces) can
+    // be board syntax. Deeper indentation is content — see isStructural.
+    const structural = isStructural(line);
 
     // Inside a fenced code block nothing is structural — preserve verbatim
-    if (inFence) {
+    if (openFence) {
       pushExtra(line);
-      if (FENCE.test(trimmed)) inFence = false;
+      if (structural) {
+        const run = fenceRun(trimmed);
+        if (run && closesFence(openFence, run)) openFence = null;
+      }
       continue;
     }
 
@@ -82,14 +127,15 @@ export function parseBoard(markdown: string): Board {
       continue;
     }
 
-    if (FENCE.test(trimmed)) {
-      inFence = true;
+    const run = structural ? fenceRun(trimmed) : null;
+    if (run) {
+      openFence = run.fence;
       currentItem = null;
       pushExtra(line);
       continue;
     }
 
-    if (trimmed === "---" && !inArchive && isArchiveSeparator(lines, i)) {
+    if (structural && trimmed === "---" && !inArchive && isArchiveSeparator(lines, i)) {
       inArchive = true;
       awaitingArchiveHeading = true;
       currentLane = null;
@@ -99,9 +145,9 @@ export function parseBoard(markdown: string): Board {
     }
 
     // Lane headings
-    if (trimmed.startsWith("## ")) {
+    if (structural && trimmed.startsWith("## ")) {
       currentItem = null;
-      if (inArchive && awaitingArchiveHeading && /^##\s+archive\s*$/i.test(trimmed)) {
+      if (inArchive && awaitingArchiveHeading && ARCHIVE_HEADING.test(trimmed)) {
         // Consume only the archive marker. Any later headings are user content.
         awaitingArchiveHeading = false;
         continue;
@@ -119,14 +165,14 @@ export function parseBoard(markdown: string): Board {
 
     // A bare "- [ ]" with no text can't be a card — preserve as text
     // (otherwise the regex below would make a card titled "[ ]")
-    if (/^[-*]\s+\[[ xX]\]\s*$/.test(trimmed)) {
+    if (structural && /^[-*]\s+\[[ xX]\]\s*$/.test(trimmed)) {
       currentItem = null;
       pushExtra(line);
       continue;
     }
 
     // List item: "- text", "- [ ] text", "- [x] text"
-    const match = trimmed.match(/^[-*]\s+(?:\[([ xX])\]\s+)?(.+)/);
+    const match = structural ? trimmed.match(/^[-*]\s+(?:\[([ xX])\]\s+)?(.+)/) : null;
     if (match) {
       // Items before the first lane heading have no home — preserve as text
       if (!inArchive && !currentLane) {
