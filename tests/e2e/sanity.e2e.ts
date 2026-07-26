@@ -101,6 +101,72 @@ function domTextAll(selector: string): string {
   return cli(`dev:dom selector="${selector}" text all`);
 }
 
+// The run shares one leaf — "the host leaf". Switching a file into an existing
+// leaf never raises the OS window, but the CLI's `create ... open` always
+// does, once per board, which stole focus repeatedly during a run and let a
+// stray click break whichever test was mid-flight.
+//
+// Bootstrapping still needs one activating open, so a run raises the window
+// exactly once instead of once per board.
+//
+// A board leaf's view type flips from "markdown" to "kanban-board" via the
+// plugin's setViewState redirect, so the host leaf is looked up under both.
+const HOST_NOTE = "_e2e_host";
+const HOST_PATH = `${HOST_NOTE}.md`;
+
+/**
+ * Show `path` in the host leaf without activating it, so the OS window is
+ * never raised. Polls because `create` returns before the vault registers the
+ * file, and openFile needs the TFile.
+ *
+ * This waits on the vault's file registry, NOT metadataCache — tests that
+ * deliberately open a brand-new board still exercise the redirect's
+ * content-read fallback.
+ */
+function showInHostLeaf(path: string): void {
+  const code =
+    "(() => {" +
+    "  const leaves = [];" +
+    "  app.workspace.iterateAllLeaves(l => {" +
+    "    const t = l.view && l.view.getViewType ? l.view.getViewType() : '';" +
+    "    if (t === 'markdown' || t === 'kanban-board') leaves.push(l);" +
+    "  });" +
+    "  const leaf = leaves.find(l => l.view.containerEl.offsetParent !== null) ?? leaves[0];" +
+    "  if (!leaf) return 'no-leaf';" +
+    `  const file = app.vault.getAbstractFileByPath('${path}');` +
+    "  if (!file) return 'no-file';" +
+    // openFile is async, so report success only once the view has actually
+    // switched — otherwise callers race it. Re-entrant: a second poll won't
+    // re-open. Both MarkdownView and KanbanView expose `file`.
+    `  if (leaf.view.file && leaf.view.file.path === '${path}') return 'ok';` +
+    "  leaf.openFile(file, { active: false });" +
+    "  return 'opening';" +
+    "})()";
+  const out = waitFor(
+    `eval code="${code}"`,
+    (o) => o.includes("ok") || o.includes("no-leaf"),
+    8000
+  );
+  if (out.includes("no-leaf")) {
+    // Nothing to reuse — bootstrap with an activating open. Expected only at
+    // suite start; mid-run it means a leaf was torn down unexpectedly.
+    cli(`open path="${path}"`);
+  }
+}
+
+/** Create and open the shared host leaf. The only window-raise in a run. */
+function bootstrapHostLeaf() {
+  try { cli(`create name="${HOST_NOTE}" content="e2e host leaf"`); } catch { /* exists */ }
+  // `create` returns before the vault registers the file, and `open` needs it
+  // — the old `create ... open` did both in one command, so this gap is new.
+  waitFor(
+    `eval code="app.vault.getAbstractFileByPath('${HOST_PATH}') ? 'indexed' : 'waiting'"`,
+    (out) => out.includes("indexed"),
+    8000
+  );
+  cli(`open path="${HOST_PATH}"`);
+}
+
 function cleanup() {
   try {
     cli(`delete path="${TEST_PATH}" permanent`);
@@ -172,7 +238,8 @@ function findCard(title: string): string {
 }
 
 function createBoard() {
-  cli(`create name="${TEST_FILE}" content="${KANBAN_CONTENT}" open`);
+  cli(`create name="${TEST_FILE}" content="${KANBAN_CONTENT}"`);
+  showInHostLeaf(TEST_PATH);
   waitForDom(".kb-lane", "3", 8000);
 }
 
@@ -204,6 +271,7 @@ function test(name: string, fn: () => void) {
 console.log("\n=== e2e tests ===\n");
 
 cleanup();
+bootstrapHostLeaf();
 
 // ── Plugin lifecycle ────────────────────────────────────
 
@@ -604,7 +672,8 @@ test("editing a board preserves custom frontmatter, preamble, and fenced content
   try {
     // Opening a brand-new file exercises the redirect's content-read
     // fallback (metadataCache hasn't indexed it yet)
-    cli(`create name="${FILE}" content="${content}" open`);
+    cli(`create name="${FILE}" content="${content}"`);
+    showInHostLeaf(PATH);
     waitForDom(".kb-lane", "1", 8000);
 
     // Fence decoys must not render as cards or lanes
@@ -656,7 +725,8 @@ test("multi-paragraph card text survives the save/reload cycle", () => {
   try { cli(`delete path="${PATH}" permanent`); } catch { /* didn't exist */ }
 
   try {
-    cli(`create name="${FILE}" content="${content}" open`);
+    cli(`create name="${FILE}" content="${content}"`);
+    showInHostLeaf(PATH);
     waitForDom(".kb-lane", "1", 8000);
 
     // Edit the card into two paragraphs separated by a blank line, blur to save
@@ -713,7 +783,8 @@ test("drag: card moves across lanes and saves in order", () => {
     "- card three",
     "",
   ].join("\\n");
-  cli(`create name="${DRAG_FILE}" content="${content}" open`);
+  cli(`create name="${DRAG_FILE}" content="${content}"`);
+  showInHostLeaf(DRAG_PATH);
   waitForDom(".kb-lane", "2", 8000);
 
   // Drop "card one" onto the bottom edge of "card three" (inserts after it)
@@ -790,7 +861,8 @@ test("context menu: duplicate card", () => {
     "- gamma",
     "",
   ].join("\\n");
-  cli(`create name="${ACTIONS_FILE}" content="${content}" open`);
+  cli(`create name="${ACTIONS_FILE}" content="${content}"`);
+  showInHostLeaf(ACTIONS_PATH);
   waitForDom(".kb-lane", "2", 8000);
 
   openCardMenu("alpha");
@@ -932,6 +1004,8 @@ test("lane delete shows undo toast and restores lane with cards", () => {
 // ── Cleanup ─────────────────────────────────────────────
 
 cleanup();
+// The host leaf's note has to outlive the per-test files, so it is removed here.
+try { cli(`delete path="${HOST_PATH}" permanent`); } catch { /* already gone */ }
 
 console.log(`\n  ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);
