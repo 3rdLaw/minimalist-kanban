@@ -143,6 +143,26 @@ describe("checkIsKanban", () => {
     const { plugin } = await makePlugin();
     await expect((plugin as any).checkIsKanban("Missing.md")).resolves.toBe(false);
   });
+
+  test("trusts the metadata cache for indexed non-board files without reading", async () => {
+    const { plugin, app } = await makePlugin();
+    app.vault.getAbstractFileByPath.mockReturnValue(tfile("Note.md"));
+    app.vault.cachedRead.mockResolvedValue("---\nkanban-plugin: board\n---\n");
+    // An indexed note with frontmatter that isn't ours. The cache is
+    // authoritative, so the (contradicting) file content is never read.
+    app.metadataCache.getCache.mockReturnValue({ frontmatter: { tags: ["x"] } });
+    await expect((plugin as any).checkIsKanban("Note.md")).resolves.toBe(false);
+    expect(app.vault.cachedRead).not.toHaveBeenCalled();
+  });
+
+  test("trusts the metadata cache for indexed files with no frontmatter", async () => {
+    const { plugin, app } = await makePlugin();
+    app.vault.getAbstractFileByPath.mockReturnValue(tfile("Note.md"));
+    app.vault.cachedRead.mockResolvedValue("---\nkanban-plugin: board\n---\n");
+    app.metadataCache.getCache.mockReturnValue({});
+    await expect((plugin as any).checkIsKanban("Note.md")).resolves.toBe(false);
+    expect(app.vault.cachedRead).not.toHaveBeenCalled();
+  });
 });
 
 describe("setViewState redirect", () => {
@@ -163,6 +183,36 @@ describe("setViewState redirect", () => {
     const leaf = new WorkspaceLeaf();
     await leaf.setViewState({ type: "markdown", state: { file: "Note.md" } });
 
+    expect(leaf.lastViewState.type).toBe("markdown");
+  });
+
+  test("an in-flight redirect never overwrites a newer navigation", async () => {
+    const { app } = await makePlugin(makeApp(), { load: true });
+    app.vault.getAbstractFileByPath.mockImplementation((p: string) => tfile(p));
+
+    // "Board.md" is not indexed yet, so deciding requires a read we control.
+    let releaseBoardRead!: (content: string) => void;
+    app.vault.cachedRead.mockImplementation(
+      (file: TFile) =>
+        file.path === "Board.md"
+          ? new Promise<string>((resolve) => {
+              releaseBoardRead = resolve;
+            })
+          : Promise.resolve("Just a note\n")
+    );
+
+    const leaf = new WorkspaceLeaf();
+    const first = leaf.setViewState({ type: "markdown", state: { file: "Board.md" } });
+    const second = leaf.setViewState({ type: "markdown", state: { file: "Other.md" } });
+    await second;
+
+    expect(leaf.lastViewState.state.file).toBe("Other.md");
+
+    // The slow read finishes last and must not resurrect the older request.
+    releaseBoardRead("---\nkanban-plugin: board\n---\n");
+    await first;
+
+    expect(leaf.lastViewState.state.file).toBe("Other.md");
     expect(leaf.lastViewState.type).toBe("markdown");
   });
 

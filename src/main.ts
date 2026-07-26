@@ -7,6 +7,8 @@ import type { KBSettings } from "./settings";
 export default class KanbanBoardPlugin extends Plugin {
   settings: KBSettings = { ...DEFAULT_SETTINGS };
   private bypassRedirectLeaves = new WeakSet<WorkspaceLeaf>();
+  /** Most recent intercepted setViewState request per leaf; see patchSetViewState. */
+  private redirectSeq = new WeakMap<WorkspaceLeaf, number>();
 
   async onload() {
     await this.loadSettings();
@@ -67,6 +69,18 @@ export default class KanbanBoardPlugin extends Plugin {
     const isBypassed = (leaf: WorkspaceLeaf) => this.bypassRedirectLeaves.has(leaf);
     const checkIsKanban = (path: string) => this.checkIsKanban(path);
 
+    // Deciding whether to redirect can require reading the file, so two view
+    // state changes for the same leaf can finish out of order and let an
+    // older navigation land on top of a newer one. Each interception takes a
+    // token; a request that is no longer the leaf's latest is abandoned.
+    const claimLeaf = (leaf: WorkspaceLeaf) => {
+      const token = (this.redirectSeq.get(leaf) ?? 0) + 1;
+      this.redirectSeq.set(leaf, token);
+      return token;
+    };
+    const stillCurrent = (leaf: WorkspaceLeaf, token: number) =>
+      this.redirectSeq.get(leaf) === token;
+
     type SetViewStateFn = (viewState: ViewState, eState?: unknown) => Promise<void>;
 
     // monkey-around chains correctly if other plugins patch the same
@@ -79,6 +93,7 @@ export default class KanbanBoardPlugin extends Plugin {
             state: ViewState,
             eState?: unknown
           ): Promise<void> {
+            const token = claimLeaf(this);
             if (
               !isBypassed(this) &&
               state.type === "markdown" &&
@@ -94,6 +109,9 @@ export default class KanbanBoardPlugin extends Plugin {
 
               if (!alreadyMarkdown) {
                 const isKanban = await checkIsKanban(state.state.file as string);
+                // A newer request for this leaf started while we were
+                // deciding; applying ours now would undo it.
+                if (!stillCurrent(this, token)) return;
                 if (isKanban) {
                   const newState: ViewState = { ...state, type: KANBAN_VIEW_TYPE };
                   return original.call(this, newState, eState);
@@ -114,6 +132,13 @@ export default class KanbanBoardPlugin extends Plugin {
 
   private async checkIsKanban(path: string): Promise<boolean> {
     if (this.isKanbanFileSync(path)) return true;
+
+    // A file the vault has indexed has known frontmatter, so the answer is
+    // already no. Only unindexed files — just created, or opened before the
+    // vault finished loading — need the read below. That matters because
+    // this sits in front of every markdown navigation: without it, opening
+    // any ordinary note awaits a full read of its contents.
+    if (this.app.metadataCache.getCache(path)) return false;
 
     const file = this.app.vault.getAbstractFileByPath(path);
     if (!(file instanceof TFile)) return false;
