@@ -16,6 +16,7 @@
   let boardEl;
   let laneSortable;
   let undoNotice = null;
+  let undoSubjectId = null;
 
   onMount(() => {
     laneSortable = new Sortable(boardEl, {
@@ -78,16 +79,32 @@
   onDestroy(() => {
     undoNotice?.hide();
     undoNotice = null;
+    undoSubjectId = null;
   });
 
   function save() {
     onChange(board);
   }
 
+  /**
+   * Retires a pending undo whose subject has since been acted on. Without
+   * this the "Card archived" toast stays clickable after the card has been
+   * restored by hand, and clicking it would do nothing.
+   */
+  function invalidateUndo(subjectId) {
+    if (undoSubjectId !== null && undoSubjectId === subjectId) {
+      undoNotice?.hide();
+      undoNotice = null;
+      undoSubjectId = null;
+    }
+  }
+
   // `undo` reverses just the action that triggered the toast, so other
-  // changes made while the toast is visible are kept.
-  function showUndoToast(message, undo) {
+  // changes made while the toast is visible are kept. `subjectId` is the
+  // card or list the undo would restore; see invalidateUndo.
+  function showUndoToast(message, undo, subjectId = null) {
     undoNotice?.hide();
+    undoSubjectId = subjectId;
     const notice = new Notice("", 7000);
     undoNotice = notice;
     const el = notice.noticeEl;
@@ -105,7 +122,10 @@
       board = board;
       save();
       notice.hide();
-      if (undoNotice === notice) undoNotice = null;
+      if (undoNotice === notice) {
+        undoNotice = null;
+        undoSubjectId = null;
+      }
     });
     el.appendChild(btn);
   }
@@ -135,9 +155,14 @@
     const [lane] = board.lanes.splice(idx, 1);
     board = board;
     save();
-    showUndoToast(`List "${lane.title}" deleted`, () => {
-      board.lanes.splice(Math.min(idx, board.lanes.length), 0, lane);
-    });
+    showUndoToast(
+      `List "${lane.title}" deleted`,
+      () => {
+        if (board.lanes.includes(lane)) return;
+        board.lanes.splice(Math.min(idx, board.lanes.length), 0, lane);
+      },
+      lane.id
+    );
   }
 
   function handleLaneRename(e) {
@@ -187,9 +212,14 @@
       const [item] = lane.items.splice(idx, 1);
       board = board;
       save();
-      showUndoToast("Card deleted", () => {
-        lane.items.splice(Math.min(idx, lane.items.length), 0, item);
-      });
+      showUndoToast(
+        "Card deleted",
+        () => {
+          if (!board.lanes.includes(lane)) return;
+          lane.items.splice(Math.min(idx, lane.items.length), 0, item);
+        },
+        item.id
+      );
     }
   }
 
@@ -329,10 +359,20 @@
           board.archive.push(item);
           board = board;
           save();
-          showUndoToast("Card archived", () => {
-            board.archive = board.archive.filter((a) => a.id !== item.id);
-            lane.items.splice(Math.min(idx, lane.items.length), 0, item);
-          });
+          showUndoToast(
+            "Card archived",
+            () => {
+              // The card may have been restored or deleted from the archive
+              // while the toast was up. Re-inserting it then would put the
+              // same id into two keyed lists — Svelte throws, and a
+              // multi-lane board would persist the card twice.
+              if (!board.archive.some((a) => a.id === item.id)) return;
+              if (!board.lanes.includes(lane)) return;
+              board.archive = board.archive.filter((a) => a.id !== item.id);
+              lane.items.splice(Math.min(idx, lane.items.length), 0, item);
+            },
+            item.id
+          );
         })
     );
 
@@ -346,9 +386,14 @@
           const [removed] = lane.items.splice(idx, 1);
           board = board;
           save();
-          showUndoToast("Card deleted", () => {
-            lane.items.splice(Math.min(idx, lane.items.length), 0, removed);
-          });
+          showUndoToast(
+            "Card deleted",
+            () => {
+              if (!board.lanes.includes(lane)) return;
+              lane.items.splice(Math.min(idx, lane.items.length), 0, removed);
+            },
+            removed.id
+          );
         })
     );
 
@@ -370,6 +415,7 @@
           .setTitle("Restore card")
           .setIcon("archive-restore")
           .onClick(() => {
+            invalidateUndo(itemId);
             board.archive = board.archive.filter((i) => i.id !== itemId);
             const target = board.lanes[board.lanes.length - 1];
             if (settings.prependCards) {
@@ -392,6 +438,7 @@
               si.setTitle(targetLane.title)
                 .setIcon("columns-3")
                 .onClick(() => {
+                  invalidateUndo(itemId);
                   board.archive = board.archive.filter((i) => i.id !== itemId);
                   if (settings.prependCards) {
                     targetLane.items.unshift(item);
@@ -425,9 +472,14 @@
           const [removed] = board.archive.splice(idx, 1);
           board = board;
           save();
-          showUndoToast("Card deleted", () => {
-            board.archive.splice(Math.min(idx, board.archive.length), 0, removed);
-          });
+          showUndoToast(
+            "Card deleted",
+            () => {
+              if (board.archive.some((a) => a.id === removed.id)) return;
+              board.archive.splice(Math.min(idx, board.archive.length), 0, removed);
+            },
+            removed.id
+          );
         })
     );
 

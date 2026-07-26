@@ -1,5 +1,6 @@
 import { describe, test, expect, vi, beforeEach } from "vitest";
 import { render, fireEvent } from "@testing-library/svelte";
+import { tick } from "svelte";
 import Board from "../src/Board.svelte";
 import { Menu, Notice, Platform } from "obsidian";
 import SortableMock from "./mocks/sortablejs";
@@ -1009,5 +1010,144 @@ describe("Undo toast", () => {
 
     expect(first.hidden).toBe(true);
     expect(latestNotice()).not.toBe(first);
+  });
+});
+
+// ── Undo conflicts ──────────────────────────────────────
+
+/**
+ * An undo closure runs up to seven seconds after its action, so the board
+ * may have moved on. Restoring an archived card by hand and then clicking
+ * the archive toast's Undo used to insert the card a second time: on a
+ * one-lane board that puts a duplicate key into a keyed {#each} (Svelte
+ * throws), and on a multi-lane board it persists the card in two lanes.
+ */
+describe("Undo conflicts", () => {
+  type MockMenuItem = InstanceType<typeof import("./mocks/obsidian").MenuItem>;
+
+  function latestNotice() {
+    return Notice.instances[Notice.instances.length - 1];
+  }
+
+  function liveIds(board: BoardType) {
+    return [
+      ...board.lanes.flatMap((l) => l.items.map((i) => i.id)),
+      ...board.archive.map((i) => i.id),
+    ];
+  }
+
+  async function archiveFirstCard(container: HTMLElement) {
+    const before = Menu.instances.length;
+    await fireEvent.click(container.querySelectorAll(".kb-item .kb-menu-btn")[0]);
+    Menu.instances[before].findItem("Archive card")!._onClick!();
+    await tick();
+  }
+
+  async function openArchiveMenu(container: HTMLElement) {
+    const before = Menu.instances.length;
+    await fireEvent.click(container.querySelector(".kb-archive-lane .kb-menu-btn")!);
+    return Menu.instances[before];
+  }
+
+  test("restoring an archived card retires the archive undo", async () => {
+    const { container, onChange } = renderBoard(
+      {
+        lanes: [
+          {
+            id: "lane-1",
+            title: "To Do",
+            items: [{ id: "i1", title: "Task A", checked: false }],
+          },
+        ],
+      },
+      { showArchive: true }
+    );
+    await archiveFirstCard(container);
+    const notice = latestNotice();
+
+    (await openArchiveMenu(container)).findItem("Restore card")!._onClick!();
+    await tick();
+
+    expect(notice.hidden).toBe(true);
+  });
+
+  test("archive → restore → Undo does not duplicate the card", async () => {
+    const { container, onChange } = renderBoard(
+      {
+        lanes: [
+          {
+            id: "lane-1",
+            title: "To Do",
+            items: [{ id: "i1", title: "Task A", checked: false }],
+          },
+        ],
+      },
+      { showArchive: true }
+    );
+    await archiveFirstCard(container);
+    const notice = latestNotice();
+
+    (await openArchiveMenu(container)).findItem("Restore card")!._onClick!();
+    await tick();
+
+    // The toast is gone from the UI by now; clicking the stale button is the
+    // worst case the guard inside the closure has to survive.
+    (notice.noticeEl.querySelector(".kb-undo-btn") as HTMLButtonElement).click();
+    await tick();
+
+    const updated = onChange.mock.calls[onChange.mock.calls.length - 1][0] as BoardType;
+    expect(liveIds(updated)).toEqual(["i1"]);
+    expect(updated.lanes[0].items).toHaveLength(1);
+    expect(updated.archive).toHaveLength(0);
+  });
+
+  test("archive → restore to another list → Undo does not duplicate the card", async () => {
+    const { container, onChange } = renderBoard(undefined, { showArchive: true });
+    await archiveFirstCard(container);
+    const notice = latestNotice();
+
+    const restoreItem = (await openArchiveMenu(container)).findItem("Restore to list")!;
+    const subItems = restoreItem._submenu!.items.filter(
+      (i): i is MockMenuItem => "_title" in i
+    );
+    // Restore into "Done", not the lane it was archived from.
+    subItems[1]._onClick!();
+    await tick();
+
+    (notice.noticeEl.querySelector(".kb-undo-btn") as HTMLButtonElement).click();
+    await tick();
+
+    const updated = onChange.mock.calls[onChange.mock.calls.length - 1][0] as BoardType;
+    expect(liveIds(updated).filter((id) => id === "i1")).toHaveLength(1);
+    expect(updated.lanes[0].items.map((i) => i.title)).toEqual(["Task B"]);
+    expect(updated.lanes[1].items.map((i) => i.title)).toEqual(["Task C", "Task A"]);
+  });
+
+  test("deleting an archived card retires the archive undo", async () => {
+    const { container, onChange } = renderBoard(
+      {
+        lanes: [
+          {
+            id: "lane-1",
+            title: "To Do",
+            items: [{ id: "i1", title: "Task A", checked: false }],
+          },
+        ],
+      },
+      { showArchive: true }
+    );
+    await archiveFirstCard(container);
+    const notice = latestNotice();
+
+    (await openArchiveMenu(container)).findItem("Delete card")!._onClick!();
+    await tick();
+
+    // A fresh "Card deleted" toast replaced it; the old one must be inert.
+    expect(notice.hidden).toBe(true);
+    (notice.noticeEl.querySelector(".kb-undo-btn") as HTMLButtonElement).click();
+    await tick();
+
+    const updated = onChange.mock.calls[onChange.mock.calls.length - 1][0] as BoardType;
+    expect(liveIds(updated)).toEqual([]);
   });
 });
