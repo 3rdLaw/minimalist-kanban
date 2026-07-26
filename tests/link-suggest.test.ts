@@ -380,3 +380,90 @@ describe("LinkSuggest", () => {
     });
   });
 });
+
+// ── Pop-out windows ───────────────────────────────────────
+
+/**
+ * Obsidian boards can be moved into a pop-out window, where the textarea
+ * belongs to a different document and window. The popup used to be created
+ * with, attached to and measured against the main window regardless, so it
+ * appeared in the wrong window at the wrong coordinates.
+ */
+describe("LinkSuggest in a secondary window", () => {
+  let frame: HTMLIFrameElement;
+  let suggest: LinkSuggest;
+
+  function setupPopout(innerHeight: number, rect: Partial<DOMRect> = {}) {
+    frame = document.createElement("iframe");
+    document.body.appendChild(frame);
+    const doc = frame.contentDocument!;
+    const win = frame.contentWindow!;
+
+    // Obsidian applies its DOM extensions to pop-out windows; mirror that.
+    (doc.defaultView!.HTMLElement.prototype as unknown as {
+      setCssProps: (p: Record<string, string>) => void;
+    }).setCssProps = function (props: Record<string, string>) {
+      for (const [k, v] of Object.entries(props)) {
+        (this as HTMLElement).style.setProperty(k, v);
+      }
+    };
+    Object.defineProperty(win, "innerHeight", { value: innerHeight, configurable: true });
+
+    const textarea = doc.createElement("textarea");
+    textarea.getBoundingClientRect = () =>
+      ({ top: 100, bottom: 120, left: 40, width: 300, height: 20, right: 340 }) as DOMRect;
+    Object.assign(textarea.getBoundingClientRect, rect);
+    doc.body.appendChild(textarea);
+
+    suggest = new LinkSuggest(makeApp() as any, "test.md");
+    suggest.attach(textarea);
+    return { doc, win, textarea };
+  }
+
+  afterEach(() => {
+    suggest?.destroy();
+    frame?.remove();
+  });
+
+  test("creates and attaches the popup in the textarea's document", () => {
+    const { doc, textarea } = setupPopout(800);
+    typeInto(textarea, "[[");
+
+    const popup = doc.querySelector(".kb-link-suggest");
+    expect(popup).toBeTruthy();
+    expect(popup!.ownerDocument).toBe(doc);
+    expect(popup!.parentElement).toBe(doc.body);
+    // ...and nothing landed in the main window
+    expect(document.querySelector(".kb-link-suggest")).toBeNull();
+  });
+
+  test("builds suggestion items in the textarea's document", () => {
+    const { doc, textarea } = setupPopout(800);
+    typeInto(textarea, "[[");
+
+    const items = doc.querySelectorAll(".kb-link-suggest .suggestion-item");
+    expect(items.length).toBeGreaterThan(0);
+    for (const item of items) expect(item.ownerDocument).toBe(doc);
+  });
+
+  test("measures against the pop-out viewport, not the main window", () => {
+    // The textarea sits at y=100..120. In a 800px-tall window there is room
+    // below; in a 130px-tall one there is not, so the popup flips upward.
+    const roomy = setupPopout(800);
+    typeInto(roomy.textarea, "[[");
+    let popup = roomy.doc.querySelector(".kb-link-suggest") as HTMLElement;
+    expect(popup.style.getPropertyValue("--kb-suggest-top")).toBe("122px");
+    expect(popup.style.getPropertyValue("--kb-suggest-bottom")).toBe("auto");
+
+    suggest.destroy();
+    frame.remove();
+
+    const cramped = setupPopout(130);
+    typeInto(cramped.textarea, "[[");
+    popup = cramped.doc.querySelector(".kb-link-suggest") as HTMLElement;
+    expect(popup.style.getPropertyValue("--kb-suggest-top")).toBe("auto");
+    // 130 (pop-out height) - 100 (textarea top) + 2 — the main window is
+    // 768px tall, so a main-window measurement would give 670px here.
+    expect(popup.style.getPropertyValue("--kb-suggest-bottom")).toBe("32px");
+  });
+});

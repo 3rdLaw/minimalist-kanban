@@ -28,16 +28,40 @@ export class LinkSuggest {
     this.app = app;
     this.sourcePath = sourcePath;
 
-    this.containerEl = document.createElement("div");
-    this.containerEl.className = "suggestion-container kb-link-suggest";
+    this.containerEl = LinkSuggest.createContainer(document);
 
     this.boundOnInput = () => this.onInput();
   }
 
+  private static createContainer(doc: Document): HTMLDivElement {
+    const el = doc.createElement("div");
+    el.className = "suggestion-container kb-link-suggest";
+    return el;
+  }
+
+  /**
+   * A board can live in an Obsidian pop-out window, where the textarea
+   * belongs to a different document and window than the ones this module
+   * loaded with. Everything the popup touches — the element it creates, the
+   * body it attaches to, the viewport it measures — comes from the textarea.
+   */
+  private get doc(): Document {
+    return this.textarea?.ownerDocument ?? document;
+  }
+
+  private get win(): Window {
+    return this.doc.defaultView ?? window;
+  }
+
   attach(textarea: HTMLTextAreaElement): void {
     this.textarea = textarea;
+    const doc = textarea.ownerDocument;
+    if (this.containerEl.ownerDocument !== doc) {
+      this.containerEl.remove();
+      this.containerEl = LinkSuggest.createContainer(doc);
+    }
     textarea.addEventListener("input", this.boundOnInput);
-    document.body.appendChild(this.containerEl);
+    doc.body.appendChild(this.containerEl);
   }
 
   detach(): void {
@@ -207,11 +231,12 @@ export class LinkSuggest {
     const list = this.containerEl;
     while (list.firstChild) list.removeChild(list.firstChild);
 
+    const doc = this.doc;
     suggestions.forEach((s, i) => {
-      const el = document.createElement("div");
+      const el = doc.createElement("div");
       el.className = "suggestion-item" + (i === 0 ? " is-selected" : "");
 
-      const titleEl = document.createElement("div");
+      const titleEl = doc.createElement("div");
       titleEl.className = "suggestion-title";
       titleEl.textContent = s.heading ?? s.file.basename;
       el.appendChild(titleEl);
@@ -219,7 +244,7 @@ export class LinkSuggest {
       if (!s.heading) {
         const parentPath = s.file.parent?.path;
         if (parentPath && parentPath !== "/" && parentPath !== "") {
-          const noteEl = document.createElement("div");
+          const noteEl = doc.createElement("div");
           noteEl.className = "suggestion-note";
           noteEl.textContent = parentPath;
           el.appendChild(noteEl);
@@ -242,7 +267,8 @@ export class LinkSuggest {
   private position(): void {
     if (!this.textarea) return;
     const rect = this.textarea.getBoundingClientRect();
-    const spaceBelow = window.innerHeight - rect.bottom;
+    const viewportHeight = this.win.innerHeight;
+    const spaceBelow = viewportHeight - rect.bottom;
 
     const props: Record<string, string> = {
       "--kb-suggest-left": rect.left + "px",
@@ -254,8 +280,7 @@ export class LinkSuggest {
       props["--kb-suggest-bottom"] = "auto";
     } else {
       props["--kb-suggest-top"] = "auto";
-      props["--kb-suggest-bottom"] =
-        window.innerHeight - rect.top + 2 + "px";
+      props["--kb-suggest-bottom"] = viewportHeight - rect.top + 2 + "px";
     }
 
     this.containerEl.setCssProps(props);
