@@ -117,7 +117,7 @@ The plugin intercepts `setViewState` on all workspace leaves so that opening suc
 | **monkey-around** | Community-standard helper for patching Obsidian methods (`WorkspaceLeaf.setViewState`). Unlike a hand-rolled save/restore, it chains correctly when multiple plugins patch the same method and unload in any order. |
 | **esbuild + esbuild-svelte** | Fast bundler. Matches the Obsidian plugin ecosystem's standard build toolchain. |
 | **Vitest** | Fast, Vite-native test runner. Shares the same Svelte/Vite transform pipeline used by the project. |
-| **@testing-library/svelte v4** | Component testing utilities matched to Svelte 4. Renders components into jsdom and provides `fireEvent`/`waitFor` helpers. |
+| **@testing-library/svelte v5** | Component testing utilities. Renders components into jsdom and provides `fireEvent`/`waitFor` helpers. |
 | **jsdom** | DOM implementation for Node.js, required by @testing-library. |
 
 ## Running tests
@@ -139,7 +139,7 @@ npm run test:coverage
 npx vitest run tests/parser.test.ts
 ```
 
-The test suite has ~210 tests across 8 files. All tests run in jsdom with mocked Obsidian API and SortableJS.
+The test suite has 304 tests across 9 files. All tests run in jsdom with mocked Obsidian API and SortableJS.
 
 ### E2E tests
 
