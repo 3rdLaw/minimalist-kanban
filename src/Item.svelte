@@ -1,6 +1,6 @@
 <script>
   import { MarkdownRenderer, Platform } from "obsidian";
-  import { createEventDispatcher, afterUpdate, onDestroy, onMount } from "svelte";
+  import { afterUpdate, onDestroy, onMount } from "svelte";
   import { LinkSuggest } from "./LinkSuggest";
 
   export let item;
@@ -8,8 +8,10 @@
   export let app;
   export let viewComponent;
   export let filePath;
-
-  const dispatch = createEventDispatcher();
+  /** @type {(detail: any) => void} */
+  export let onEdit = () => {};
+  /** @type {(detail: any) => void} */
+  export let onShowMenu = () => {};
 
   let editing = false;
   let editValue = "";
@@ -151,7 +153,7 @@
     linkSuggest = null;
     const trimmed = editValue.trim();
     if (trimmed && trimmed !== item.title) {
-      dispatch("edit", { itemId: item.id, title: trimmed });
+      onEdit({ itemId: item.id, title: trimmed });
     }
   }
 
@@ -175,7 +177,7 @@
 
   function toggleChecked(e) {
     e.stopPropagation();
-    dispatch("edit", {
+    onEdit({
       itemId: item.id,
       title: item.title,
       checked: !item.checked,
@@ -184,7 +186,7 @@
 
   function showMenu(e) {
     e.stopPropagation();
-    dispatch("showmenu", { itemId: item.id, event: e });
+    onShowMenu({ itemId: item.id, event: e });
   }
 </script>
 

@@ -25,7 +25,7 @@ When a kanban file is opened:
         └─ sortable.ts – indirection layer for SortableJS (testability)
 ```
 
-Data flows one way: user action → Svelte event dispatch → Board handler → mutate `board` → `save()` → `onChange` callback → `KanbanView.requestSave()` → `TextFileView` writes Markdown to disk.
+Data flows one way: user action → callback prop (`onItemAdd`, `onLaneMove`, …) → Board handler → mutate `board` → `save()` → `onChange` callback → `KanbanView.requestSave()` → `TextFileView` writes Markdown to disk.
 
 ### Frontmatter convention
 
@@ -104,15 +104,17 @@ The plugin intercepts `setViewState` on all workspace leaves so that opening suc
 
 3. **No runtime dependencies on Obsidian in tests.** The `obsidian` module is aliased to a mock at the Vite config level. The `sortablejs` mock is injected via `globalThis` and a thin wrapper (`sortable.ts`).
 
-4. **Svelte 4 with plain JS in components.** `.svelte` files use plain JavaScript `<script>` blocks (no `lang="ts"`), keeping the Svelte compiler path simple. TypeScript is used in all `.ts` files.
+4. **Svelte 5 in legacy (non-runes) mode, with plain JS in components.** `.svelte` files use plain JavaScript `<script>` blocks (no `lang="ts"`), keeping the Svelte compiler path simple. TypeScript is used in all `.ts` files. Components still declare props with `export let`, which Svelte 5 supports; they were not rewritten to runes. The one exception is `reactive.svelte.ts`, whose `.svelte.ts` extension makes `$state` available — `KanbanView` needs it to push settings changes into the mounted board now that `component.$set()` is gone.
 
-5. **Single-file bundle.** esbuild produces one `main.js` file with CSS injected inline by the Svelte compiler (`css: "injected"`). No separate CSS extraction step.
+5. **Parent–child communication by callback props.** Components take `onEdit`/`onLaneMove`/… function props rather than `createEventDispatcher` plus `on:` listeners. Handlers receive the payload object directly instead of a `CustomEvent` with a `.detail`.
+
+6. **Single-file bundle.** esbuild produces one `main.js` file with CSS injected inline by the Svelte compiler (`css: "injected"`). No separate CSS extraction step.
 
 ## Libraries
 
 | Library | Why |
 |---|---|
-| **Svelte 4** | Lightweight, compiles to vanilla JS with no runtime framework overhead. Good fit for an Obsidian plugin where bundle size matters. |
+| **Svelte 5** | Compiles to vanilla JS with a small signal-based runtime. Note that the Svelte 5 runtime is meaningfully larger than Svelte 4's compiled output at this project's size — the production bundle grew from ~83 KB to ~135 KB on the Svelte 4 → 5 upgrade. |
 | **SortableJS** | Battle-tested drag-and-drop library that handles touch devices, animation, and cross-list moves. |
 | **monkey-around** | Community-standard helper for patching Obsidian methods (`WorkspaceLeaf.setViewState`). Unlike a hand-rolled save/restore, it chains correctly when multiple plugins patch the same method and unload in any order. |
 | **esbuild + esbuild-svelte** | Fast bundler. Matches the Obsidian plugin ecosystem's standard build toolchain. |

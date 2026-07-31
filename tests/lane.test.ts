@@ -49,11 +49,10 @@ describe("Lane", () => {
   });
 
   test("dispatches itemadd on Enter in add-card input", async () => {
-    const { container, component } = render(Lane, {
-      props: { lane: makeLane(), settings: defaultSettings, app: {}, viewComponent: null, filePath: "test.md", laneIndex: 0, laneCount: 1 },
-    });
     const handler = vi.fn();
-    component.$on("itemadd", handler);
+    const { container } = render(Lane, {
+      props: { lane: makeLane(), settings: defaultSettings, app: {}, viewComponent: null, filePath: "test.md", laneIndex: 0, laneCount: 1, onItemAdd: handler },
+    });
 
     const textarea = container.querySelector(
       ".kb-add-item-input"
@@ -62,17 +61,16 @@ describe("Lane", () => {
     await fireEvent.keyDown(textarea, { key: "Enter" });
 
     expect(handler).toHaveBeenCalled();
-    expect(handler.mock.calls[0][0].detail).toEqual({
+    expect(handler.mock.calls[0][0]).toEqual({
       laneId: "lane-1",
       title: "New card",
     });
   });
 
   test("clears input after adding item", async () => {
-    const { container, component } = render(Lane, {
-      props: { lane: makeLane(), settings: defaultSettings, app: {}, viewComponent: null, filePath: "test.md", laneIndex: 0, laneCount: 1 },
+    const { container } = render(Lane, {
+      props: { lane: makeLane(), settings: defaultSettings, app: {}, viewComponent: null, filePath: "test.md", laneIndex: 0, laneCount: 1, onItemAdd: vi.fn() },
     });
-    component.$on("itemadd", vi.fn());
 
     const textarea = container.querySelector(
       ".kb-add-item-input"
@@ -84,11 +82,10 @@ describe("Lane", () => {
   });
 
   test("does not add empty items", async () => {
-    const { container, component } = render(Lane, {
-      props: { lane: makeLane(), settings: defaultSettings, app: {}, viewComponent: null, filePath: "test.md", laneIndex: 0, laneCount: 1 },
-    });
     const handler = vi.fn();
-    component.$on("itemadd", handler);
+    const { container } = render(Lane, {
+      props: { lane: makeLane(), settings: defaultSettings, app: {}, viewComponent: null, filePath: "test.md", laneIndex: 0, laneCount: 1, onItemAdd: handler },
+    });
 
     const textarea = container.querySelector(".kb-add-item-input")!;
     await fireEvent.input(textarea, { target: { value: "   " } });
@@ -98,11 +95,10 @@ describe("Lane", () => {
   });
 
   test("ignores Enter during IME composition in add-card input", async () => {
-    const { container, component } = render(Lane, {
-      props: { lane: makeLane(), settings: defaultSettings, app: {}, viewComponent: null, filePath: "test.md", laneIndex: 0, laneCount: 1 },
-    });
     const handler = vi.fn();
-    component.$on("itemadd", handler);
+    const { container } = render(Lane, {
+      props: { lane: makeLane(), settings: defaultSettings, app: {}, viewComponent: null, filePath: "test.md", laneIndex: 0, laneCount: 1, onItemAdd: handler },
+    });
 
     const textarea = container.querySelector(".kb-add-item-input")!;
     await fireEvent.input(textarea, { target: { value: "日本語" } });
@@ -112,17 +108,17 @@ describe("Lane", () => {
   });
 
   test("Shift+Enter adds card when enterNewline is true", async () => {
-    const { container, component } = render(Lane, {
+    const handler = vi.fn();
+    const { container } = render(Lane, {
       props: {
         lane: makeLane(),
         settings: { ...defaultSettings, enterNewline: true },
         app: {}, viewComponent: null, filePath: "test.md",
         laneIndex: 0,
         laneCount: 1,
+        onItemAdd: handler,
       },
     });
-    const handler = vi.fn();
-    component.$on("itemadd", handler);
 
     const textarea = container.querySelector(".kb-add-item-input")!;
     await fireEvent.input(textarea, { target: { value: "Card text" } });
@@ -132,17 +128,17 @@ describe("Lane", () => {
   });
 
   test("plain Enter does NOT add card when enterNewline is true", async () => {
-    const { container, component } = render(Lane, {
+    const handler = vi.fn();
+    const { container } = render(Lane, {
       props: {
         lane: makeLane(),
         settings: { ...defaultSettings, enterNewline: true },
         app: {}, viewComponent: null, filePath: "test.md",
         laneIndex: 0,
         laneCount: 1,
+        onItemAdd: handler,
       },
     });
-    const handler = vi.fn();
-    component.$on("itemadd", handler);
 
     const textarea = container.querySelector(".kb-add-item-input")!;
     await fireEvent.input(textarea, { target: { value: "Card text" } });
@@ -186,11 +182,10 @@ describe("Lane", () => {
   });
 
   test("Delete list menu item dispatches lanedelete", async () => {
-    const { container, component } = render(Lane, {
-      props: { lane: makeLane(), settings: defaultSettings, app: {}, viewComponent: null, filePath: "test.md", laneIndex: 0, laneCount: 1 },
-    });
     const handler = vi.fn();
-    component.$on("lanedelete", handler);
+    const { container } = render(Lane, {
+      props: { lane: makeLane(), settings: defaultSettings, app: {}, viewComponent: null, filePath: "test.md", laneIndex: 0, laneCount: 1, onLaneDelete: handler },
+    });
 
     await fireEvent.click(
       container.querySelector(".kb-lane-header .kb-menu-btn")!
@@ -240,11 +235,10 @@ describe("Lane", () => {
   });
 
   test("Move list left dispatches lanemove with direction -1", async () => {
-    const { container, component } = render(Lane, {
-      props: { lane: makeLane(), settings: defaultSettings, app: {}, viewComponent: null, filePath: "test.md", laneIndex: 1, laneCount: 3 },
-    });
     const handler = vi.fn();
-    component.$on("lanemove", handler);
+    const { container } = render(Lane, {
+      props: { lane: makeLane(), settings: defaultSettings, app: {}, viewComponent: null, filePath: "test.md", laneIndex: 1, laneCount: 3, onLaneMove: handler },
+    });
 
     await fireEvent.click(
       container.querySelector(".kb-lane-header .kb-menu-btn")!
@@ -252,25 +246,24 @@ describe("Lane", () => {
     Menu.instances[0].findItem("Move list left")!._onClick!();
 
     expect(handler).toHaveBeenCalled();
-    expect(handler.mock.calls[0][0].detail).toEqual({
+    expect(handler.mock.calls[0][0]).toEqual({
       laneId: "lane-1",
       direction: -1,
     });
   });
 
   test("Move list right dispatches lanemove with direction +1", async () => {
-    const { container, component } = render(Lane, {
-      props: { lane: makeLane(), settings: defaultSettings, app: {}, viewComponent: null, filePath: "test.md", laneIndex: 0, laneCount: 3 },
-    });
     const handler = vi.fn();
-    component.$on("lanemove", handler);
+    const { container } = render(Lane, {
+      props: { lane: makeLane(), settings: defaultSettings, app: {}, viewComponent: null, filePath: "test.md", laneIndex: 0, laneCount: 3, onLaneMove: handler },
+    });
 
     await fireEvent.click(
       container.querySelector(".kb-lane-header .kb-menu-btn")!
     );
     Menu.instances[0].findItem("Move list right")!._onClick!();
 
-    expect(handler.mock.calls[0][0].detail).toEqual({
+    expect(handler.mock.calls[0][0]).toEqual({
       laneId: "lane-1",
       direction: 1,
     });
@@ -305,11 +298,10 @@ describe("Lane", () => {
   });
 
   test("dispatches itemmove on SortableJS onEnd (same lane)", async () => {
-    const { container, component } = render(Lane, {
-      props: { lane: makeLane(), settings: defaultSettings, app: {}, viewComponent: null, filePath: "test.md", laneIndex: 0, laneCount: 1 },
-    });
     const handler = vi.fn();
-    component.$on("itemmove", handler);
+    const { container } = render(Lane, {
+      props: { lane: makeLane(), settings: defaultSettings, app: {}, viewComponent: null, filePath: "test.md", laneIndex: 0, laneCount: 1, onItemMove: handler },
+    });
 
     const itemsEl = container.querySelector(".kb-lane-items")! as HTMLElement;
     const instance = SortableMock.instances[SortableMock.instances.length - 1];
@@ -329,7 +321,7 @@ describe("Lane", () => {
     });
 
     expect(handler).toHaveBeenCalled();
-    expect(handler.mock.calls[0][0].detail).toEqual({
+    expect(handler.mock.calls[0][0]).toEqual({
       fromLaneId: "lane-1",
       toLaneId: "lane-1",
       oldIndex: 0,

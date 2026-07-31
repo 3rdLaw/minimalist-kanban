@@ -150,8 +150,8 @@
 
   // ── Lane events ────────────────────────────────────────
 
-  function handleItemMove(e) {
-    const { fromLaneId, toLaneId, oldIndex, newIndex } = e.detail;
+  function handleItemMove(detail) {
+    const { fromLaneId, toLaneId, oldIndex, newIndex } = detail;
     const fromLane = board.lanes.find((l) => l.id === fromLaneId);
     const toLane = board.lanes.find((l) => l.id === toLaneId);
     if (!fromLane || !toLane) return;
@@ -161,8 +161,8 @@
     save();
   }
 
-  function handleLaneDelete(e) {
-    const idx = board.lanes.findIndex((l) => l.id === e.detail.laneId);
+  function handleLaneDelete(detail) {
+    const idx = board.lanes.findIndex((l) => l.id === detail.laneId);
     if (idx < 0) return;
     const [lane] = board.lanes.splice(idx, 1);
     board = board;
@@ -177,17 +177,17 @@
     );
   }
 
-  function handleLaneRename(e) {
-    const lane = board.lanes.find((l) => l.id === e.detail.laneId);
+  function handleLaneRename(detail) {
+    const lane = board.lanes.find((l) => l.id === detail.laneId);
     if (lane) {
-      lane.title = e.detail.title;
+      lane.title = detail.title;
       board = board;
       save();
     }
   }
 
-  function handleLaneMove(e) {
-    const { laneId, direction } = e.detail;
+  function handleLaneMove(detail) {
+    const { laneId, direction } = detail;
     const idx = board.lanes.findIndex((l) => l.id === laneId);
     if (idx < 0) return;
     const newIdx = idx + direction;
@@ -198,12 +198,12 @@
     save();
   }
 
-  function handleItemAdd(e) {
-    const lane = board.lanes.find((l) => l.id === e.detail.laneId);
+  function handleItemAdd(detail) {
+    const lane = board.lanes.find((l) => l.id === detail.laneId);
     if (lane) {
       const newItem = {
         id: generateId(),
-        title: e.detail.title,
+        title: detail.title,
         checked: false,
       };
       if (settings.prependCards) {
@@ -216,32 +216,13 @@
     }
   }
 
-  function handleItemDelete(e) {
-    const lane = board.lanes.find((l) => l.id === e.detail.laneId);
+  function handleItemEdit(detail) {
+    const lane = board.lanes.find((l) => l.id === detail.laneId);
     if (lane) {
-      const idx = lane.items.findIndex((i) => i.id === e.detail.itemId);
-      if (idx < 0) return;
-      const [item] = lane.items.splice(idx, 1);
-      board = board;
-      save();
-      showUndoToast(
-        "Card deleted",
-        () => {
-          if (!board.lanes.includes(lane)) return;
-          lane.items.splice(Math.min(idx, lane.items.length), 0, item);
-        },
-        item.id
-      );
-    }
-  }
-
-  function handleItemEdit(e) {
-    const lane = board.lanes.find((l) => l.id === e.detail.laneId);
-    if (lane) {
-      const item = lane.items.find((i) => i.id === e.detail.itemId);
+      const item = lane.items.find((i) => i.id === detail.itemId);
       if (item) {
-        item.title = e.detail.title;
-        if (e.detail.checked !== undefined) item.checked = e.detail.checked;
+        item.title = detail.title;
+        if (detail.checked !== undefined) item.checked = detail.checked;
         board = board;
         save();
       }
@@ -250,8 +231,8 @@
 
   // ── Item context menu ──────────────────────────────────
 
-  function handleItemShowMenu(e) {
-    const { laneId, itemId, event } = e.detail;
+  function handleItemShowMenu(detail) {
+    const { laneId, itemId, event } = detail;
     const lane = board.lanes.find((l) => l.id === laneId);
     if (!lane) return;
     const item = lane.items.find((i) => i.id === itemId);
@@ -410,8 +391,8 @@
 
   // ── Archive lane actions ───────────────────────────────
 
-  function handleArchiveItemMenu(e) {
-    const { itemId, event } = e.detail;
+  function handleArchiveItemMenu(detail) {
+    const { itemId, event } = detail;
     const item = board.archive.find((i) => i.id === itemId);
     if (!item) return;
 
@@ -540,14 +521,13 @@
       {filePath}
       laneIndex={i}
       laneCount={board.lanes.length}
-      on:itemmove={handleItemMove}
-      on:lanedelete={handleLaneDelete}
-      on:lanerename={handleLaneRename}
-      on:lanemove={handleLaneMove}
-      on:itemadd={handleItemAdd}
-      on:itemdelete={handleItemDelete}
-      on:itemedit={handleItemEdit}
-      on:itemshowmenu={handleItemShowMenu}
+      onItemMove={handleItemMove}
+      onLaneDelete={handleLaneDelete}
+      onLaneRename={handleLaneRename}
+      onLaneMove={handleLaneMove}
+      onItemAdd={handleItemAdd}
+      onItemEdit={handleItemEdit}
+      onItemShowMenu={handleItemShowMenu}
     />
   {/each}
   {#if settings.showArchive && board.archive.length > 0}
@@ -564,7 +544,7 @@
             <!-- svelte-ignore a11y-click-events-have-key-events -->
             <button
               class="kb-menu-btn"
-              on:click={(e) => handleArchiveItemMenu({ detail: { itemId: item.id, event: e } })}
+              on:click={(e) => handleArchiveItemMenu({ itemId: item.id, event: e })}
               on:mousedown|stopPropagation
               on:touchstart|stopPropagation
               aria-label="Card menu"

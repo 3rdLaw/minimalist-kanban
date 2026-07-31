@@ -23,7 +23,7 @@ function makeItem(overrides = {}) {
   };
 }
 
-function renderItem(itemOverrides = {}, settingsOverrides = {}) {
+function renderItem(itemOverrides = {}, settingsOverrides = {}, extraProps = {}) {
   return render(Item, {
     props: {
       item: makeItem(itemOverrides),
@@ -31,6 +31,7 @@ function renderItem(itemOverrides = {}, settingsOverrides = {}) {
       app: mockApp,
       viewComponent: null,
       filePath: mockFilePath,
+      ...extraProps,
     },
   });
 }
@@ -73,9 +74,8 @@ describe("Item", () => {
   });
 
   test("dispatches edit event on Enter (default settings)", async () => {
-    const { container, component } = renderItem();
     const handler = vi.fn();
-    component.$on("edit", handler);
+    const { container } = renderItem({}, {}, { onEdit: handler });
 
     await fireEvent.click(container.querySelector(".kb-item-title")!);
     const textarea = container.querySelector(".kb-item-edit")! as HTMLTextAreaElement;
@@ -84,7 +84,7 @@ describe("Item", () => {
     await fireEvent.blur(textarea);
 
     expect(handler).toHaveBeenCalled();
-    expect(handler.mock.calls[0][0].detail.title).toBe("Updated");
+    expect(handler.mock.calls[0][0].title).toBe("Updated");
   });
 
   test("Enter inserts newline when enterNewline is true", async () => {
@@ -97,9 +97,8 @@ describe("Item", () => {
   });
 
   test("Shift+Enter submits when enterNewline is true", async () => {
-    const { container, component } = renderItem({}, { enterNewline: true });
     const handler = vi.fn();
-    component.$on("edit", handler);
+    const { container } = renderItem({}, { enterNewline: true }, { onEdit: handler });
 
     await fireEvent.click(container.querySelector(".kb-item-title")!);
     const textarea = container.querySelector(".kb-item-edit")! as HTMLTextAreaElement;
@@ -111,9 +110,8 @@ describe("Item", () => {
   });
 
   test("cancels edit on Escape", async () => {
-    const { container, component } = renderItem();
     const handler = vi.fn();
-    component.$on("edit", handler);
+    const { container } = renderItem({}, {}, { onEdit: handler });
 
     await fireEvent.click(container.querySelector(".kb-item-title")!);
     const textarea = container.querySelector(".kb-item-edit")!;
@@ -124,7 +122,7 @@ describe("Item", () => {
   });
 
   test("ignores Enter during IME composition", async () => {
-    const { container, component } = renderItem();
+    const { container } = renderItem();
 
     await fireEvent.click(container.querySelector(".kb-item-title")!);
     const textarea = container.querySelector(".kb-item-edit")!;
@@ -150,13 +148,12 @@ describe("Item", () => {
   });
 
   test("dispatches showmenu event on menu button click", async () => {
-    const { container, component } = renderItem();
     const handler = vi.fn();
-    component.$on("showmenu", handler);
+    const { container } = renderItem({}, {}, { onShowMenu: handler });
 
     await fireEvent.click(container.querySelector(".kb-menu-btn")!);
     expect(handler).toHaveBeenCalled();
-    expect(handler.mock.calls[0][0].detail.itemId).toBe("item-1");
+    expect(handler.mock.calls[0][0].itemId).toBe("item-1");
   });
 
   test("keeps non-paragraph blocks when rendering mixed content", async () => {
@@ -191,11 +188,11 @@ describe("Item", () => {
       .spyOn(MarkdownRenderer, "render")
       .mockImplementationOnce(() => Promise.reject(new Error("render failed")));
     try {
-      const { container, component } = renderItem({ title: "hello" });
+      const { container, rerender } = renderItem({ title: "hello" });
       // Let the rejected render settle.
       await new Promise((r) => setTimeout(r, 10));
       // Any later update pass must retry rather than stay blank forever.
-      component.$set({ settings: { ...defaultSettings } });
+      await rerender({ settings: { ...defaultSettings } });
       await tick();
       await new Promise((r) => setTimeout(r, 10));
       const el = container.querySelector(".kb-item-title")!;
@@ -260,9 +257,8 @@ describe("Item", () => {
   });
 
   test("does not dispatch edit when title unchanged", async () => {
-    const { container, component } = renderItem();
     const handler = vi.fn();
-    component.$on("edit", handler);
+    const { container } = renderItem({}, {}, { onEdit: handler });
 
     await fireEvent.click(container.querySelector(".kb-item-title")!);
     const textarea = container.querySelector(".kb-item-edit")!;
@@ -287,18 +283,18 @@ describe("Item", () => {
   // ── Checkbox toggle ───────────────────────────────────
 
   test("toggling checkbox dispatches edit with new checked state", async () => {
-    const { container, component } = renderItem(
-      { checked: false },
-      { showCheckboxes: true }
-    );
     const handler = vi.fn();
-    component.$on("edit", handler);
+    const { container } = renderItem(
+      { checked: false },
+      { showCheckboxes: true },
+      { onEdit: handler }
+    );
 
     const checkbox = container.querySelector(".kb-item-checkbox")!;
     await fireEvent.change(checkbox);
 
     expect(handler).toHaveBeenCalled();
-    expect(handler.mock.calls[0][0].detail).toMatchObject({
+    expect(handler.mock.calls[0][0]).toMatchObject({
       itemId: "item-1",
       title: "Test card",
       checked: true,
@@ -306,16 +302,16 @@ describe("Item", () => {
   });
 
   test("unchecking a checked item dispatches edit with checked=false", async () => {
-    const { container, component } = renderItem(
-      { checked: true },
-      { showCheckboxes: true }
-    );
     const handler = vi.fn();
-    component.$on("edit", handler);
+    const { container } = renderItem(
+      { checked: true },
+      { showCheckboxes: true },
+      { onEdit: handler }
+    );
 
     await fireEvent.change(container.querySelector(".kb-item-checkbox")!);
 
-    expect(handler.mock.calls[0][0].detail.checked).toBe(false);
+    expect(handler.mock.calls[0][0].checked).toBe(false);
   });
 
   test("places cursor at end on mobile when entering edit mode", async () => {

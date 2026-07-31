@@ -10,7 +10,15 @@ export default defineConfig([
     languageOptions: {
       parser: tsparser,
       parserOptions: { project: "./tsconfig.json" },
-      globals: globals.browser,
+      globals: {
+        ...globals.browser,
+        // Svelte 5 runes. Compiler-provided, so they are undeclared as far as
+        // eslint is concerned; only `.svelte.ts` modules may use them.
+        $state: "readonly",
+        $derived: "readonly",
+        $effect: "readonly",
+        $props: "readonly",
+      },
     },
     rules: {
       "obsidianmd/sample-names": "off",

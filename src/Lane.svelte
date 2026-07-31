@@ -3,7 +3,7 @@
   import { getSortable } from "./sortable";
   const Sortable = getSortable();
   import { Menu } from "obsidian";
-  import { createEventDispatcher, onMount, tick } from "svelte";
+  import { onMount, tick } from "svelte";
   import { LinkSuggest } from "./LinkSuggest";
 
   export let lane;
@@ -13,8 +13,20 @@
   export let filePath;
   export let laneIndex;
   export let laneCount;
-
-  const dispatch = createEventDispatcher();
+  /** @type {(detail: any) => void} */
+  export let onItemMove = () => {};
+  /** @type {(detail: any) => void} */
+  export let onLaneRename = () => {};
+  /** @type {(detail: any) => void} */
+  export let onLaneDelete = () => {};
+  /** @type {(detail: any) => void} */
+  export let onLaneMove = () => {};
+  /** @type {(detail: any) => void} */
+  export let onItemAdd = () => {};
+  /** @type {(detail: any) => void} */
+  export let onItemEdit = () => {};
+  /** @type {(detail: any) => void} */
+  export let onItemShowMenu = () => {};
 
   let itemsEl;
   let sortableInstance;
@@ -51,7 +63,7 @@
           }
         }
 
-        dispatch("itemmove", {
+        onItemMove({
           fromLaneId: from.dataset.laneId,
           toLaneId: to.dataset.laneId,
           oldIndex,
@@ -80,7 +92,7 @@
     editingTitle = false;
     const trimmed = titleDraft.trim();
     if (trimmed && trimmed !== lane.title) {
-      dispatch("lanerename", { laneId: lane.id, title: trimmed });
+      onLaneRename({ laneId: lane.id, title: trimmed });
     }
   }
 
@@ -90,7 +102,7 @@
   }
 
   function deleteLane() {
-    dispatch("lanedelete", { laneId: lane.id });
+    onLaneDelete({ laneId: lane.id });
   }
 
   function showLaneMenu(e) {
@@ -108,7 +120,7 @@
           i
             .setTitle("Move list left")
             .setIcon("arrow-left")
-            .onClick(() => dispatch("lanemove", { laneId: lane.id, direction: -1 }))
+            .onClick(() => onLaneMove({ laneId: lane.id, direction: -1 }))
         );
       }
       if (laneIndex < laneCount - 1) {
@@ -116,7 +128,7 @@
           i
             .setTitle("Move list right")
             .setIcon("arrow-right")
-            .onClick(() => dispatch("lanemove", { laneId: lane.id, direction: 1 }))
+            .onClick(() => onLaneMove({ laneId: lane.id, direction: 1 }))
         );
       }
     }
@@ -133,7 +145,7 @@
   function submitNewItem() {
     const trimmed = newItemTitle.trim();
     if (!trimmed) return;
-    dispatch("itemadd", { laneId: lane.id, title: trimmed });
+    onItemAdd({ laneId: lane.id, title: trimmed });
     newItemTitle = "";
     linkSuggest?.close();
     if (!settings.prependCards) {
@@ -157,16 +169,12 @@
     }
   }
 
-  function handleItemDelete(e) {
-    dispatch("itemdelete", { laneId: lane.id, itemId: e.detail.itemId });
+  function handleItemEdit(detail) {
+    onItemEdit({ laneId: lane.id, ...detail });
   }
 
-  function handleItemEdit(e) {
-    dispatch("itemedit", { laneId: lane.id, ...e.detail });
-  }
-
-  function handleItemShowMenu(e) {
-    dispatch("itemshowmenu", { laneId: lane.id, ...e.detail });
+  function handleItemShowMenu(detail) {
+    onItemShowMenu({ laneId: lane.id, ...detail });
   }
 </script>
 
@@ -203,9 +211,8 @@
         {app}
         {viewComponent}
         {filePath}
-        on:delete={handleItemDelete}
-        on:edit={handleItemEdit}
-        on:showmenu={handleItemShowMenu}
+        onEdit={handleItemEdit}
+        onShowMenu={handleItemShowMenu}
       />
     {/each}
   </div>

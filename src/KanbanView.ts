@@ -1,15 +1,30 @@
 import { TextFileView, WorkspaceLeaf } from "obsidian";
+import { mount, unmount } from "svelte";
 import type { Board } from "./types";
 import type KanbanBoardPlugin from "./main";
 import { parseBoard, serializeBoard } from "./parser";
+import { reactive } from "./reactive.svelte";
 import BoardComponent from "./Board.svelte";
 
 export const KANBAN_VIEW_TYPE = "kanban-board";
 
+interface BoardProps {
+  // `mount()` types its props bag as an index-signature record, and Board.svelte
+  // has a plain-JS script so it contributes no prop types of its own.
+  [key: string]: unknown;
+  board: Board;
+  settings: KanbanBoardPlugin["settings"];
+  app: KanbanView["app"];
+  viewComponent: KanbanView;
+  filePath: string;
+  onChange: (updatedBoard: Board) => void;
+}
+
 export class KanbanView extends TextFileView {
   board: Board = { lanes: [], archive: [] };
   private plugin: KanbanBoardPlugin;
-  private component: BoardComponent | null = null;
+  private component: Record<string, unknown> | null = null;
+  private props: BoardProps | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: KanbanBoardPlugin) {
     super(leaf);
@@ -51,8 +66,8 @@ export class KanbanView extends TextFileView {
   }
 
   onSettingsChanged() {
-    if (this.component) {
-      this.component.$set({ settings: this.plugin.settings });
+    if (this.props) {
+      this.props.settings = this.plugin.settings;
     }
   }
 
@@ -61,26 +76,29 @@ export class KanbanView extends TextFileView {
     this.contentEl.empty();
     this.contentEl.addClass("kb-view");
 
-    this.component = new BoardComponent({
-      target: this.contentEl,
-      props: {
-        board: this.board,
-        settings: this.plugin.settings,
-        app: this.app,
-        viewComponent: this,
-        filePath: this.file?.path || "",
-        onChange: (updatedBoard: Board) => {
-          this.board = updatedBoard;
-          this.requestSave();
-        },
+    this.props = reactive<BoardProps>({
+      board: this.board,
+      settings: this.plugin.settings,
+      app: this.app,
+      viewComponent: this,
+      filePath: this.file?.path || "",
+      onChange: (updatedBoard: Board) => {
+        this.board = updatedBoard;
+        this.requestSave();
       },
+    });
+
+    this.component = mount(BoardComponent, {
+      target: this.contentEl,
+      props: this.props,
     });
   }
 
   private destroyComponent() {
     if (this.component) {
-      this.component.$destroy();
+      void unmount(this.component);
       this.component = null;
+      this.props = null;
     }
   }
 }
