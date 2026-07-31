@@ -16,6 +16,19 @@ npm run lint
 
 This runs `eslint-plugin-obsidianmd` with the recommended ruleset, checking for sentence case, forbidden APIs, `any` types, and other Obsidian plugin guidelines. It then runs `npm run check` (svelte-check), which type-checks the `.svelte` component scripts against the Obsidian typings — the only thing that catches a call to an API Obsidian no longer publishes.
 
+Both should be clean — zero errors *and* zero warnings. Two rules are switched off for a single file each, with the reasoning recorded inline in `eslint.config.mjs`:
+
+| Rule | File | Why |
+|---|---|---|
+| `obsidianmd/prefer-create-el` | `LinkSuggest.ts` | Its suggested `doc.win.createDiv()` does not type-check — Obsidian declares `createDiv` as a bare global, not a `Window` member. The pop-out correctness the rule is protecting is already handled via `ownerDocument`/`defaultView`. |
+| `obsidianmd/settings-tab/prefer-setting-definitions` | `settings.ts` | Needs `minAppVersion` ≥ 1.13.0 (see below). |
+
+### Deferred: declarative settings API
+
+`PluginSettingTab.getSettingDefinitions()` (Obsidian 1.13.0+) would put this plugin's four toggles into Obsidian's settings search. It is deliberately not adopted yet, because `manifest.json` declares `minAppVersion: 1.1.13` and taking the API means raising that to `1.13.0`.
+
+When that trade is worth making, note that it is not a pure swap: the default `setControlValue()` only persists `plugin.settings`, while this plugin's `saveSettings()` additionally walks open leaves and calls `KanbanView.onSettingsChanged()` so that live boards re-render. Override `setControlValue()` to route through `saveSettings()`, or changing a toggle will stop updating open boards until they are reopened.
+
 ## Unit tests
 
 ```bash

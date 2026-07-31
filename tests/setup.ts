@@ -3,8 +3,10 @@ import { beforeEach } from "vitest";
 import { Menu, Notice, Setting } from "obsidian";
 import SortableMock from "./mocks/sortablejs";
 
-// Inject mock before any Svelte component loads
-(globalThis as any).__TEST_SORTABLE__ = SortableMock;
+// Inject mock before any Svelte component loads. `sortable.ts` reads this off
+// `window`; under jsdom that is the same object, but keep the two sides named
+// alike so the seam is greppable.
+(window as any).__TEST_SORTABLE__ = SortableMock;
 
 // Obsidian extends HTMLElement with helpers — stub them for jsdom
 if (!HTMLElement.prototype.setCssProps) {
