@@ -2,13 +2,12 @@
   "compilerOptions": {
     "target": "es2018",
     "module": "ESNext",
-    "moduleResolution": "node",
-    "lib": ["dom", "dom.iterable", "es2018"],
+    "moduleResolution": "bundler",
+    "lib": ["dom", "dom.iterable", "es2019"],
     "strict": true,
     "skipLibCheck": true,
     "inlineSourceMap": true,
     "inlineSources": true,
-    "baseUrl": ".",
     "allowSyntheticDefaultImports": true
   },
   "include": ["src/**/*.ts", "src/**/*.d.ts"]
