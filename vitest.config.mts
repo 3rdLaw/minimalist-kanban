@@ -3,7 +3,9 @@ import { svelte } from "@sveltejs/vite-plugin-svelte";
 import path from "path";
 
 export default defineConfig({
-  plugins: [svelte({ hot: false, compilerOptions: { generate: "dom" } })],
+  // vite-plugin-svelte 7 owns `compilerOptions.generate`, and `hot` is no
+  // longer a valid option — both were rejected as invalid config when passed.
+  plugins: [svelte()],
   test: {
     include: ["tests/**/*.test.ts"],
     exclude: ["tests/e2e/**"],
