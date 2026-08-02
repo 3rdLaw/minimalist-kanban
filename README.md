@@ -85,9 +85,14 @@ npm install
 npm run build     # Production build → main.js
 npm run dev       # Watch mode with source maps
 npm test          # Run unit tests
-npm run lint      # ESLint + svelte-check
+npm run lint      # ESLint + svelte-check + e2e typecheck
 npm run test:e2e  # Run e2e tests (requires Obsidian 1.12+ with CLI)
 ```
+
+See [TESTING.md](TESTING.md) before touching the e2e suite. It documents the
+flake patterns that keep it stable, several of which are counter-intuitive —
+notably that the `obsidian` CLI reports every error at exit code 0, so a failed
+command is indistinguishable from a successful one unless you read its output.
 
 ## License
 

@@ -44,7 +44,7 @@ function cli(cmd: string, retries = 2): string {
       // Deciding retries by matching stderr TEXT only ever caught the first
       // shape; the other two carry no text and failed their test on the first
       // blip. Because every application-level outcome is rc=0 + text, ANY throw
-      // here is transport-level and worth retrying. See flake pattern 16.
+      // here is transport-level and worth retrying. See flake pattern 1.
       const timedOut = err.code === "ETIMEDOUT" || err.signal === "SIGTERM" || err.signal === "SIGKILL";
       if (attempt < retries) {
         // A timeout means the app was busy; give it longer than a crash would.
@@ -198,7 +198,7 @@ function showInHostLeaf(path: string): void {
  *
  * The note is a COMMITTED FIXTURE, not created here. `create` does not fail on
  * a name that is taken — it succeeds having made "_e2e_host 1.md" instead
- * (pattern 16) — so creating it each run meant any run that started with the
+ * (flake pattern 1) — so creating it each run meant any run that started with the
  * note still present, i.e. any run killed before its cleanup, orphaned another
  * numbered copy into this git-tracked vault. Committing it removes the failure
  * mode rather than guarding it: there is no create left to duplicate, and
@@ -221,6 +221,68 @@ function cleanup() {
   } catch {
     // file doesn't exist
   }
+}
+
+// ── Per-test state hygiene ──────────────────────────────
+
+/**
+ * Every note the suite has created, deleted at the end of a run.
+ *
+ * Deliberately NOT deleted per test: several tests hand a board to the next one
+ * (the two drag tests share DRAG_PATH, the context-menu group shares
+ * ACTIONS_PATH), so per-test deletion would pull files out from under them.
+ * This is the safety net for the case that actually leaks — a test that throws
+ * before reaching its own inline delete.
+ */
+const createdPaths = new Set<string>();
+
+/**
+ * Create a note, and make sure it lands on the path the caller asked for.
+ *
+ * `create` does not fail on a taken name: it succeeds having made "Name 1.md"
+ * (see flake pattern 1), so a leftover from an earlier failure would leave the
+ * test reading STALE content with the fresh copy orphaned beside it. Deleting
+ * first makes the create deterministic; verifying the reported path catches the
+ * case where the delete did not take.
+ */
+function createNote(name: string, content: string): void {
+  const path = `${name}.md`;
+  createdPaths.add(path);
+  cli(`delete path="${path}" permanent`);
+  const out = cli(`create name="${name}" content="${content}"`);
+  const made = /Created:\s*(.+)$/m.exec(out)?.[1]?.trim();
+  if (made && made !== path) {
+    cli(`delete path="${made}" permanent`);
+    throw new Error(
+      `createNote("${name}"): create landed on "${made}" — the vault still ` +
+      `held a copy the delete above did not clear.`
+    );
+  }
+}
+
+/**
+ * Dismiss transient UI so a failing test cannot poison the next one.
+ *
+ * This is what the observed cascade needed: a link-suggest test threw before
+ * its closing Escape, leaving the card edit textarea open, and the next test's
+ * wait for `.kb-item-edit` then matched the stale one and timed out. Toasts are
+ * left alone — they expire on their own, and the tests that assert on
+ * `.kb-undo-notice` need the plugin's own bookkeeping intact.
+ */
+function resetUiState(): void {
+  try {
+    evaluate(
+      "(() => {" +
+      "  document.querySelectorAll('.kb-item-edit, .kb-lane-title-input, .kb-add-item-input')" +
+      "    .forEach(el => {" +
+      "      el.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true}));" +
+      "      el.blur();" +
+      "    });" +
+      // Obsidian's context menu is appended to body and survives a failed click
+      "  document.querySelectorAll('.menu').forEach(m => m.remove());" +
+      "})()"
+    );
+  } catch { /* best effort — never mask the real failure */ }
 }
 
 /** JSON map of every lane title to its card titles, for order assertions. */
@@ -286,7 +348,7 @@ function findCard(title: string): string {
 }
 
 function createBoard() {
-  cli(`create name="${TEST_FILE}" content="${KANBAN_CONTENT}"`);
+  createNote(TEST_FILE, KANBAN_CONTENT);
   showInHostLeaf(TEST_PATH);
   waitForDom(".kb-lane", "3", 8000);
 }
@@ -314,6 +376,10 @@ function test(name: string, fn: () => void) {
     // it, and that is usually the only thing that says WHY a run failed.
     for (const line of String(err.message).split("\n")) console.log(`        ${line}`);
     failed++;
+  } finally {
+    // Runs on pass too: a test that returns early can leave an editor open
+    // just as easily as one that throws.
+    resetUiState();
   }
 }
 
@@ -584,10 +650,30 @@ test("adding cards scrolls the lane to show the new item", () => {
 
 // ── Link suggest ───────────────────────────────────────
 
+const LINK_TARGET = "Link Target";
+
+/**
+ * Put the note the suggest tests link to in place, and wait until BOTH indexes
+ * it needs are populated: the vault file list (file suggestions) and
+ * metadataCache headings (heading suggestions).
+ *
+ * Polled, not slept. The original `sleep(1000)` after create was a fixed guess
+ * at asynchronous indexing, and when it came up short the test failed with
+ * "No elements found" — reporting a broken feature when the feature was fine.
+ *
+ * Called by both suggest tests so neither depends on the other having run.
+ */
+function ensureLinkTarget(): void {
+  createNote(LINK_TARGET, "# Important Section\\nSome content");
+  waitFor(
+    `eval code="(() => { const f = app.vault.getAbstractFileByPath('${LINK_TARGET}.md'); if (!f) return 'no-file'; const c = app.metadataCache.getFileCache(f); return (c && c.headings && c.headings.length) ? 'indexed' : 'waiting'; })()"`,
+    (o) => o.includes("indexed"),
+    8000
+  );
+}
+
 test("link suggest: [[ triggers file autocomplete in card edit", () => {
-  // Create a target note for the suggest to find
-  cli(`create name="Link Target" content="# Important Section\\nSome content"`);
-  sleep(1000);
+  ensureLinkTarget();
 
   // Click the "Write tests" card to enter edit mode
   evaluate([
@@ -604,10 +690,15 @@ test("link suggest: [[ triggers file autocomplete in card edit", () => {
     "ta.selectionEnd = 6",
     "ta.dispatchEvent(new Event('input', {bubbles:true}))",
   ].join("; "));
-  sleep(500);
 
-  // Verify suggest popup shows "Link Target"
-  const suggestText = domTextAll(".kb-link-suggest .suggestion-title");
+  // Poll for the popup instead of sleep(500) + a single-shot read: the suggest
+  // renders asynchronously, so one read at a fixed offset either catches it or
+  // reports "No elements found" and fails a working feature.
+  const suggestText = waitFor(
+    'dev:dom selector=".kb-link-suggest .suggestion-title" text all',
+    (o) => o.includes("Link Target"),
+    5000
+  );
   assert.ok(
     suggestText.includes("Link Target"),
     `Expected "Link Target" in suggest: ${suggestText}`
@@ -643,7 +734,9 @@ test("link suggest: [[ triggers file autocomplete in card edit", () => {
 });
 
 test("link suggest: # shows heading autocomplete", () => {
-  // Use the board file itself — its ## headings are already indexed
+  // Idempotent: does not assume the previous test ran or succeeded.
+  ensureLinkTarget();
+
   // Click "Write tests" to enter edit mode
   evaluate([
     "const t = [...document.querySelectorAll('.kb-item-title')].find(e => e.textContent.trim() === 'Write tests')",
@@ -659,10 +752,13 @@ test("link suggest: # shows heading autocomplete", () => {
     "ta.selectionEnd = 14",
     "ta.dispatchEvent(new Event('input', {bubbles:true}))",
   ].join("; "));
-  sleep(500);
 
-  // Verify heading suggestions appear
-  const headings = domTextAll(".kb-link-suggest .suggestion-title");
+  // Poll, for the same reason as the file suggest above.
+  const headings = waitFor(
+    'dev:dom selector=".kb-link-suggest .suggestion-title" text all',
+    (o) => o.includes("Important Section"),
+    5000
+  );
   assert.ok(
     headings.includes("Important Section"),
     `Expected "Important Section" in headings: ${headings}`
@@ -689,9 +785,10 @@ test("link suggest: # shows heading autocomplete", () => {
     "document.querySelector('.kb-item-edit').dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true}))"
   );
   sleep(200);
-
-  // Clean up the helper note
-  try { cli('delete path="Link Target.md" permanent'); } catch {}
+  // The helper note is not deleted here. An inline cleanup only runs when the
+  // test reaches it, which is exactly what leaked "Link Target.md" when this
+  // test flaked — and the next run's `create` then made "Link Target 1.md".
+  // createNote() registered it; the end-of-run sweep removes it either way.
 });
 
 // ── Content preservation through the live save pipeline ─
@@ -723,7 +820,7 @@ test("editing a board preserves custom frontmatter, preamble, and fenced content
   try {
     // Opening a brand-new file exercises the redirect's content-read
     // fallback (metadataCache hasn't indexed it yet)
-    cli(`create name="${FILE}" content="${content}"`);
+    createNote(FILE, content);
     showInHostLeaf(PATH);
     waitForDom(".kb-lane", "1", 8000);
 
@@ -776,7 +873,7 @@ test("multi-paragraph card text survives the save/reload cycle", () => {
   try { cli(`delete path="${PATH}" permanent`); } catch { /* didn't exist */ }
 
   try {
-    cli(`create name="${FILE}" content="${content}"`);
+    createNote(FILE, content);
     showInHostLeaf(PATH);
     waitForDom(".kb-lane", "1", 8000);
 
@@ -834,7 +931,7 @@ test("drag: card moves across lanes and saves in order", () => {
     "- card three",
     "",
   ].join("\\n");
-  cli(`create name="${DRAG_FILE}" content="${content}"`);
+  createNote(DRAG_FILE, content);
   showInHostLeaf(DRAG_PATH);
   waitForDom(".kb-lane", "2", 8000);
 
@@ -912,7 +1009,7 @@ test("context menu: duplicate card", () => {
     "- gamma",
     "",
   ].join("\\n");
-  cli(`create name="${ACTIONS_FILE}" content="${content}"`);
+  createNote(ACTIONS_FILE, content);
   showInHostLeaf(ACTIONS_PATH);
   waitForDom(".kb-lane", "2", 8000);
 
@@ -1055,9 +1152,17 @@ test("lane delete shows undo toast and restores lane with cards", () => {
 // ── Cleanup ─────────────────────────────────────────────
 
 cleanup();
-// The host note is NOT deleted: it is a committed fixture (see
-// bootstrapHostLeaf). Removing it here is what left the vault in a state where
-// the next run's `create` silently made "_e2e_host 1.md".
+// Sweep every note the run created. Tests still delete their own boards inline
+// where that matters for the next test, but an inline delete only runs if the
+// test got that far — this catches what a thrown test left behind, so a
+// failure never leaks into the git-tracked vault (or into the next run, where
+// `create` would silently turn the leftover into a numbered duplicate).
+for (const path of createdPaths) {
+  try { cli(`delete path="${path}" permanent`); } catch { /* already gone */ }
+}
+// The host note is NOT swept: it is a committed fixture (see bootstrapHostLeaf)
+// and createNote never registered it. Removing it here is what left the vault
+// in a state where the next run's `create` silently made "_e2e_host 1.md".
 
 console.log(`\n  ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);

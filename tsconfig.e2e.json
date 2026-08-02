@@ -1,0 +1,26 @@
+{
+  // The e2e harness is Node code, not plugin code: it shells out to the
+  // `obsidian` CLI and reads its output. It therefore needs node types and a
+  // node-ish module resolution, which the plugin's own tsconfig (DOM-only,
+  // bundler resolution, src/** only) does not provide.
+  //
+  // It ran unchecked for a long time because `npx tsx` strips types without
+  // verifying them. In the sibling fleet-tables repo the same blind spot let a
+  // real type error reach a release, so this is wired into `npm run lint`.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node"],
+    "lib": ["dom", "dom.iterable", "es2021"],
+    "target": "es2021",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true
+  },
+  // Scoped to the e2e harness only. The vitest suites under tests/ carry ~89
+  // pre-existing type errors of their own (mock augmentations like
+  // `Menu.instances`, missing vitest globals); pulling them in here would mean
+  // fixing all of that before this gate could ever go green. Worth doing, but
+  // as its own change — see "Still outstanding" in the flake-patterns doc.
+  "include": ["tests/e2e/**/*.ts"]
+}
