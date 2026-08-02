@@ -1,0 +1,28 @@
+{
+  // Everything under tests/ — the vitest suites and the e2e harness.
+  //
+  // Neither was checked by anything before: `vitest` and `npx tsx` both strip
+  // types without verifying them, and tsconfig.check.json covers only src/**.
+  // In the sibling fleet-tables repo the same blind spot let a real type error
+  // reach a release, so this is wired into `npm run lint`.
+  //
+  // Node types are needed because the e2e harness shells out to the `obsidian`
+  // CLI; vitest/globals because the unit suites use the global test API.
+  //
+  // NOTE: `obsidian` deliberately still resolves to the REAL package typings
+  // here, not to tests/mocks/obsidian.ts, even though vitest aliases it at
+  // runtime. The suites import from ../src, so aliasing would check the
+  // plugin's own source against the mock and hide real API misuse. The mock's
+  // extra surface is declared additively in tests/obsidian-mock.d.ts instead.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node", "vitest/globals"],
+    "lib": ["dom", "dom.iterable", "es2021"],
+    "target": "es2021",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true
+  },
+  "include": ["tests/**/*.ts", "tests/**/*.d.ts"]
+}

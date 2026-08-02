@@ -231,7 +231,7 @@ describe("setViewState redirect", () => {
     app.metadataCache.getCache.mockReturnValue(KANBAN_CACHE);
 
     const leaf = new WorkspaceLeaf();
-    const mdView = new MarkdownView();
+    const mdView = new MarkdownView(leaf);
     mdView.file = tfile("Board.md");
     leaf.view = mdView;
     await leaf.setViewState({ type: "markdown", state: { file: "Board.md" } });
@@ -260,7 +260,7 @@ describe("toggleView", () => {
     app.metadataCache.getCache.mockReturnValue(KANBAN_CACHE);
 
     const leaf = new WorkspaceLeaf();
-    const mdView = new MarkdownView();
+    const mdView = new MarkdownView(leaf);
     mdView.file = tfile("Board.md");
     leaf.view = mdView;
 
@@ -350,11 +350,11 @@ describe("injectToggleButtons", () => {
     const { plugin, app } = await makePlugin();
     app.metadataCache.getCache.mockReturnValue(KANBAN_CACHE);
 
-    const mdView = new MarkdownView();
+    const leaf = new WorkspaceLeaf();
+    const mdView = new MarkdownView(leaf);
     mdView.file = tfile("Board.md");
     const actionsEl = document.createElement("div");
     (mdView as any).actionsEl = actionsEl;
-    const leaf = new WorkspaceLeaf();
     leaf.view = mdView;
     app.workspace.iterateAllLeaves.mockImplementation((cb: (l: WorkspaceLeaf) => void) =>
       cb(leaf)
@@ -370,11 +370,11 @@ describe("injectToggleButtons", () => {
   test("skips markdown views of non-board files", async () => {
     const { plugin, app } = await makePlugin();
 
-    const mdView = new MarkdownView();
+    const leaf = new WorkspaceLeaf();
+    const mdView = new MarkdownView(leaf);
     mdView.file = tfile("Note.md");
     const actionsEl = document.createElement("div");
     (mdView as any).actionsEl = actionsEl;
-    const leaf = new WorkspaceLeaf();
     leaf.view = mdView;
     app.workspace.iterateAllLeaves.mockImplementation((cb: (l: WorkspaceLeaf) => void) =>
       cb(leaf)

@@ -359,13 +359,82 @@ function clickMenuItem(label: string) {
   );
 }
 
+// ── Shared secondary boards ─────────────────────────────
+// Two groups of tests work on a board other than the default one, built by the
+// first test in the group. Under an E2E filter that builder is usually skipped,
+// so each member ensures the board instead. Deliberately CONDITIONAL: in a full
+// run the board is already open and this is a no-op, so the group's sequence —
+// each test acting on the previous one's board — is unchanged.
+
+const DRAG_CONTENT = [
+  "---", "kanban-plugin: board", "---", "",
+  "## Alpha", "- card one", "- card two", "",
+  "## Beta", "- card three", "",
+].join("\\n");
+
+const ACTIONS_CONTENT = [
+  "---", "kanban-plugin: board", "---", "",
+  "## One", "- alpha", "- beta", "",
+  "## Two", "- gamma", "",
+].join("\\n");
+
+/** True when `path` is the file the host leaf is currently showing. */
+function isOpen(path: string): boolean {
+  return evaluate(
+    "(() => { let f = null; app.workspace.iterateAllLeaves(l => { " +
+    "  const t = l.view && l.view.getViewType ? l.view.getViewType() : ''; " +
+    "  if ((t === 'markdown' || t === 'kanban-board') && l.view.file) f = l.view.file.path; " +
+    "}); return f ?? 'none'; })()"
+  ).includes(path);
+}
+
+function ensureBoard(file: string, path: string, content: string, lanes: string): void {
+  if (isOpen(path)) return;
+  createNote(file, content);
+  showInHostLeaf(path);
+  waitForDom(".kb-lane", lanes, 8000);
+}
+
+const ensureDragBoard = () => ensureBoard(DRAG_FILE, DRAG_PATH, DRAG_CONTENT, "2");
+const ensureActionsBoard = () => ensureBoard(ACTIONS_FILE, ACTIONS_PATH, ACTIONS_CONTENT, "2");
+
 // ── Test runner ─────────────────────────────────────────
 
 let passed = 0;
 let failed = 0;
+let skipped = 0;
+
+/**
+ * `E2E="substring" npm run test:e2e` runs only tests whose name contains the
+ * substring, case-insensitively. The full run takes ~3 minutes; one test takes
+ * seconds, which matters when iterating on a single failure.
+ */
+const E2E_FILTER = process.env.E2E?.toLowerCase() ?? "";
+
+/**
+ * The shared board is created inside the "create kanban file and open it" test,
+ * and everything after it asserts against the board that test left open. Under
+ * a filter that test may be skipped, so create the board once before the first
+ * test that does run — otherwise every filtered selection but that one would
+ * fail on a board that was never opened.
+ *
+ * Tests that build their own board just overwrite this. Tests that depend on
+ * the test immediately before them still cannot run alone; see TESTING.md.
+ */
+let filteredSetupDone = false;
+function ensureFilteredSetup(): void {
+  if (!E2E_FILTER || filteredSetupDone) return;
+  filteredSetupDone = true;
+  createBoard();
+}
 
 function test(name: string, fn: () => void) {
+  if (E2E_FILTER && !name.toLowerCase().includes(E2E_FILTER)) {
+    skipped++;
+    return;
+  }
   try {
+    ensureFilteredSetup();
     fn();
     console.log(`  PASS  ${name}`);
     passed++;
@@ -386,6 +455,7 @@ function test(name: string, fn: () => void) {
 // ── Tests ───────────────────────────────────────────────
 
 console.log("\n=== e2e tests ===\n");
+if (E2E_FILTER) console.log(`  Filter: "${E2E_FILTER}"\n`);
 
 cleanup();
 bootstrapHostLeaf();
@@ -918,20 +988,7 @@ const DRAG_PATH = `${DRAG_FILE}.md`;
 
 test("drag: card moves across lanes and saves in order", () => {
   try { cli(`delete path="${DRAG_PATH}" permanent`); } catch { /* didn't exist */ }
-  const content = [
-    "---",
-    "kanban-plugin: board",
-    "---",
-    "",
-    "## Alpha",
-    "- card one",
-    "- card two",
-    "",
-    "## Beta",
-    "- card three",
-    "",
-  ].join("\\n");
-  createNote(DRAG_FILE, content);
+  createNote(DRAG_FILE, DRAG_CONTENT);
   showInHostLeaf(DRAG_PATH);
   waitForDom(".kb-lane", "2", 8000);
 
@@ -961,6 +1018,7 @@ test("drag: card moves across lanes and saves in order", () => {
 });
 
 test("drag: lane reorder via drag handle saves", () => {
+  ensureDragBoard();
   // Continues from the previous test's board: Alpha, Beta
   synthDrag(
     "document.querySelector('.kb-lane .kb-lane-drag-handle')",
@@ -996,20 +1054,7 @@ function openCardMenu(title: string) {
 
 test("context menu: duplicate card", () => {
   try { cli(`delete path="${ACTIONS_PATH}" permanent`); } catch { /* didn't exist */ }
-  const content = [
-    "---",
-    "kanban-plugin: board",
-    "---",
-    "",
-    "## One",
-    "- alpha",
-    "- beta",
-    "",
-    "## Two",
-    "- gamma",
-    "",
-  ].join("\\n");
-  createNote(ACTIONS_FILE, content);
+  createNote(ACTIONS_FILE, ACTIONS_CONTENT);
   showInHostLeaf(ACTIONS_PATH);
   waitForDom(".kb-lane", "2", 8000);
 
@@ -1028,6 +1073,7 @@ test("context menu: duplicate card", () => {
 });
 
 test("context menu: move to top", () => {
+  ensureActionsBoard();
   openCardMenu("beta");
   clickMenuItem("Move to top");
   const saved = waitFor(
@@ -1039,6 +1085,7 @@ test("context menu: move to top", () => {
 });
 
 test("checkbox: toggling a card checkbox writes [x]", () => {
+  ensureActionsBoard();
   evaluate(
     "const p = app.plugins.plugins['minimalist-kanban']; p.settings.showCheckboxes = true; p.saveSettings()"
   );
@@ -1059,6 +1106,7 @@ test("checkbox: toggling a card checkbox writes [x]", () => {
 });
 
 test("lane rename via title edit", () => {
+  ensureActionsBoard();
   evaluate(
     "[...document.querySelectorAll('.kb-lane-title')].find(t => t.textContent === 'Two').click()"
   );
@@ -1074,6 +1122,7 @@ test("lane rename via title edit", () => {
 });
 
 test("archive card: undo restores it, redo-archive persists to file", () => {
+  ensureActionsBoard();
   // Archive gamma, then undo
   openCardMenu("gamma");
   clickMenuItem("Archive card");
@@ -1112,6 +1161,7 @@ test("archive card: undo restores it, redo-archive persists to file", () => {
 });
 
 test("archive card: restore returns it to the last lane", () => {
+  ensureActionsBoard();
   evaluate("document.querySelector('.kb-archive-item .kb-menu-btn').click()");
   sleep(300);
   clickMenuItem("Restore card");
@@ -1128,6 +1178,7 @@ test("archive card: restore returns it to the last lane", () => {
 });
 
 test("lane delete shows undo toast and restores lane with cards", () => {
+  ensureActionsBoard();
   // Delete the "Renamed" lane (holds gamma)
   evaluate(
     "[...document.querySelectorAll('.kb-lane')].find(l => l.querySelector('.kb-lane-title').textContent === 'Renamed').querySelector('.kb-lane-header .kb-menu-btn').click()"
@@ -1164,5 +1215,7 @@ for (const path of createdPaths) {
 // and createNote never registered it. Removing it here is what left the vault
 // in a state where the next run's `create` silently made "_e2e_host 1.md".
 
-console.log(`\n  ${passed} passed, ${failed} failed\n`);
+const parts = [`${passed} passed`, `${failed} failed`];
+if (skipped > 0) parts.push(`${skipped} skipped`);
+console.log(`\n  ${parts.join(", ")}\n`);
 process.exit(failed > 0 ? 1 : 0);

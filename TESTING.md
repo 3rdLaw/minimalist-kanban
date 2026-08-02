@@ -2,8 +2,8 @@
 
 ```bash
 npm test              # vitest unit suite
-npm run lint          # eslint + svelte-check + e2e typecheck
-npm run check:e2e     # typecheck tests/e2e on its own
+npm run lint          # eslint + svelte-check (src) + tsc (tests)
+npm run check:tests   # typecheck everything under tests/ on its own
 npm run test:e2e      # drives a live Obsidian (~3 min)
 ```
 
@@ -127,13 +127,72 @@ the leftover into a numbered duplicate.
 
 ---
 
-## Still outstanding
+## Typechecking the tests
 
-- **The vitest suites are not typechecked.** `npm run check:e2e` covers
-  `tests/e2e/` only. The unit suites under `tests/` carry ~89 pre-existing type
-  errors (mock augmentations like `Menu.instances`, missing vitest globals), so
-  including them would mean fixing all of that before the gate could go green.
-  Worth doing as its own change; `tsconfig.e2e.json` just needs its `include`
-  widened once they are clean.
-- **No `E2E` filter.** fleet-tables supports `E2E="substring" npm run test:e2e`
-  to run one test in ~15-20s. This suite always runs all 29. Worth porting.
+`npm run check:tests` covers everything under `tests/` — both the vitest suites
+and the e2e harness. Neither was checked before: vitest and `npx tsx` both strip
+types without verifying them, and `tsconfig.check.json` covers only `src/**`.
+
+`obsidian` resolves to the **real** package typings there, not to
+`tests/mocks/obsidian.ts`, even though vitest aliases it at runtime. The suites
+import from `../src`, so aliasing the module would check the plugin's own source
+against the mock and hide real API misuse — the mock's `Menu` has no `Editor`,
+`Vault`, or anything else src relies on.
+
+The mock's extra surface is instead declared additively in
+`tests/obsidian-mock.d.ts`: the `static instances` arrays, `Menu.findItem`,
+`Notice.hidden`, `WorkspaceLeaf.lastViewState` and so on. **A member added to
+the mock needs a line there**, or its first use is a type error. Because the
+declarations are additive only, a test that typechecks against them still
+typechecks against Obsidian proper.
+
+Two things this surfaced that were worth fixing rather than declaring away:
+
+- `new MarkdownView()` — the mock's constructor takes no arguments, the real one
+  takes a leaf. The tests now pass the leaf, which the mock ignores.
+- Predicates narrowing `menu.items` to the *mock's* `MenuItem` class while the
+  array is typed with the real one. They now narrow to the real (augmented)
+  type, which is what the array actually holds.
+
+## Running a single e2e test
+
+```bash
+E2E="renders 3 lanes" npm run test:e2e
+E2E="link suggest" npm run test:e2e
+```
+
+Case-insensitive substring of the test name. Everything else is skipped and the
+summary reports the skip count. The full run is ~3 minutes; one test is seconds.
+
+The shared board is created inside the *"create kanban file and open it"* test,
+and most later tests assert against the board it left open. Under a filter that
+test is usually skipped, so the runner calls `createBoard()` once before the
+first test that does run. Without that, nearly every filtered selection would
+fail on a board that was never opened.
+
+Two groups work on a board other than the default, built by the first test in
+the group. Each member calls `ensureDragBoard()` / `ensureActionsBoard()`, which
+build that board only if it is not already the open one — so a full run is
+unaffected (the builder already opened it and the ensure is a no-op), while a
+filtered run gets the board it needs.
+
+What that cannot fix is a test asserting on a *mutation* an earlier test made
+rather than just needing a board. Four are in that position and only pass in a
+full run:
+
+| test | needs |
+|---|---|
+| `checkbox: toggling a card checkbox writes [x]` | the card `context menu: duplicate card` added |
+| `archive card: undo restores it, redo-archive persists to file` | lane state from the tests before it |
+| `archive card: restore returns it to the last lane` | the card archived by the test before it |
+| `lane delete shows undo toast and restores lane with cards` | the lane count earlier tests left |
+
+Everything else runs alone. Verified individually: `renders 3 lanes`,
+`drag: card moves across lanes`, `drag: lane reorder`, `context menu:
+duplicate card`, `context menu: move to top` and `lane rename` all pass under a
+filter; the four above and `toggle back to kanban view restores board` (which
+needs the preceding toggle-to-markdown) do not — for this reason, not because
+they are broken.
+
+Making those five standalone means rewriting their assertions to set up the
+state they check rather than inherit it. Worth doing when next editing them.

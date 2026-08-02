@@ -246,7 +246,7 @@ describe("Board card menu", () => {
     expect(moveItem._submenu).toBeTruthy();
 
     const subItems = moveItem._submenu!.items.filter(
-      (i): i is InstanceType<typeof import("./mocks/obsidian").MenuItem> =>
+      (i): i is MenuItem =>
         "_title" in i
     );
     expect(subItems.map((i) => i._title)).toEqual(["To Do", "Done"]);
@@ -260,7 +260,7 @@ describe("Board card menu", () => {
     const menu = await openCardMenu(container, 0);
     const moveItem = menu.findItem("Move to list")!;
     const subItems = moveItem._submenu!.items.filter(
-      (i): i is InstanceType<typeof import("./mocks/obsidian").MenuItem> =>
+      (i): i is MenuItem =>
         "_title" in i
     );
     // Click "Done" lane
@@ -448,7 +448,7 @@ describe("Board mobile behavior", () => {
 
     // Lane titles should be added directly to the main menu
     const mainItems = menu.items.filter(
-      (i): i is InstanceType<typeof import("./mocks/obsidian").MenuItem> =>
+      (i): i is MenuItem =>
         "_title" in i
     );
     const laneItems = mainItems.filter(
@@ -468,7 +468,7 @@ describe("Board mobile behavior", () => {
  * list rather than throw.
  */
 describe("submenu feature detection", () => {
-  type MockMenuItem = InstanceType<typeof import("./mocks/obsidian").MenuItem>;
+  type MockMenuItem = MenuItem;
 
   function titlesOf(menu: Menu) {
     return menu.items
@@ -726,7 +726,7 @@ describe("Archive lane", () => {
     const menu = await openArchiveMenu(container);
     const restoreToList = menu.findItem("Restore to list")!;
     const subItems = restoreToList._submenu!.items.filter(
-      (i): i is InstanceType<typeof import("./mocks/obsidian").MenuItem> =>
+      (i): i is MenuItem =>
         "_title" in i
     );
     // Restore to first lane ("To Do")
@@ -745,7 +745,7 @@ describe("Archive lane", () => {
     const menu = await openArchiveMenu(container);
     const restoreToList = menu.findItem("Restore to list")!;
     const subItems = restoreToList._submenu!.items.filter(
-      (i): i is InstanceType<typeof import("./mocks/obsidian").MenuItem> =>
+      (i): i is MenuItem =>
         "_title" in i
     );
     subItems[0]._onClick!();
@@ -818,7 +818,7 @@ describe("Archive lane", () => {
 
     // Lane titles added directly to main menu
     const mainItems = menu.items.filter(
-      (i): i is InstanceType<typeof import("./mocks/obsidian").MenuItem> =>
+      (i): i is MenuItem =>
         "_title" in i
     );
     const laneItems = mainItems.filter(
@@ -1081,7 +1081,7 @@ describe("Undo toast", () => {
  * throws), and on a multi-lane board it persists the card in two lanes.
  */
 describe("Undo conflicts", () => {
-  type MockMenuItem = InstanceType<typeof import("./mocks/obsidian").MenuItem>;
+  type MockMenuItem = MenuItem;
 
   function latestNotice() {
     return Notice.instances[Notice.instances.length - 1];

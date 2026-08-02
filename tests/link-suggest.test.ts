@@ -1,12 +1,15 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from "vitest";
 import { LinkSuggest } from "../src/LinkSuggest";
-import { TFile } from "obsidian";
+import { TFile, TFolder } from "obsidian";
 
 function makeTFile(basename: string, path?: string, parentPath?: string): TFile {
   const f = new TFile();
   f.basename = basename;
   f.path = path ?? `${basename}.md`;
-  f.parent = { path: parentPath ?? "" };
+  // LinkSuggest only ever reads `parent.path`, so a stub stands in rather than
+  // building the children/vault/isRoot a real TFolder carries and this never
+  // touches. The mock's own TFile types `parent` this loosely too.
+  f.parent = { path: parentPath ?? "" } as TFolder;
   f.stat = { ctime: 0, mtime: Date.now(), size: 100 };
   return f;
 }
