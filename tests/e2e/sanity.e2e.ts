@@ -31,12 +31,33 @@ function cli(cmd: string, retries = 2): string {
     } catch (err: any) {
       const stderr = err.stderr?.toString().trim() ?? "";
       const stdout = err.stdout?.toString().trim() ?? "";
-      // Retry on Flatpak/systemd transient crashes
-      if (attempt < retries && (stderr.includes("event_origin_changed") || stderr.includes("zypak-helper"))) {
-        sleep(300);
+      // The `obsidian` CLI never exits non-zero. A bad vault, an unknown
+      // subcommand, a missing path, a syntax error in `eval`, even an exception
+      // thrown inside `eval` all come back rc=0 with "Error: ..." on stdout. So
+      // execSync only throws for transport-level failures, and they arrive in
+      // at least three shapes:
+      //
+      //   crashed helper       stderr carries zypak / SIGABRT / Aborting
+      //   timed out            code ETIMEDOUT, signal SIGTERM, output EMPTY
+      //   silent non-zero exit status set, code/signal unset, output EMPTY
+      //
+      // Deciding retries by matching stderr TEXT only ever caught the first
+      // shape; the other two carry no text and failed their test on the first
+      // blip. Because every application-level outcome is rc=0 + text, ANY throw
+      // here is transport-level and worth retrying. See flake pattern 16.
+      const timedOut = err.code === "ETIMEDOUT" || err.signal === "SIGTERM" || err.signal === "SIGKILL";
+      if (attempt < retries) {
+        // A timeout means the app was busy; give it longer than a crash would.
+        sleep(timedOut ? 2000 : 300);
         continue;
       }
-      throw new Error(`CLI failed: ${full}\nstdout: ${stdout}\nstderr: ${stderr}`);
+      throw new Error(
+        `CLI failed after ${retries + 1} attempts: ${full}\n` +
+        `status: ${err.status ?? "(none)"}  code: ${err.code ?? "(none)"}  ` +
+        `signal: ${err.signal ?? "(none)"}\n` +
+        `message: ${err.message ?? "(none)"}\n` +
+        `stdout: ${stdout}\nstderr: ${stderr}`
+      );
     }
   }
   throw new Error(`CLI failed after retries: ${full}`);
@@ -142,11 +163,29 @@ function showInHostLeaf(path: string): void {
     "  leaf.openFile(file, { active: false });" +
     "  return 'opening';" +
     "})()";
-  const out = waitFor(
-    `eval code="${code}"`,
-    (o) => o.includes("ok") || o.includes("no-leaf"),
-    8000
-  );
+  let out: string;
+  try {
+    out = waitFor(
+      `eval code="${code}"`,
+      (o) => o.includes("ok") || o.includes("no-leaf"),
+      8000
+    );
+  } catch (err: any) {
+    // 'no-file' stays out of the predicate on purpose: create returns before
+    // the vault indexes the file, so a transient 'no-file' must keep polling.
+    // But it is also the one reply that can never become 'ok' by itself, so if
+    // the poll ran out while still seeing it, report THAT rather than the
+    // generic timeout — which names the symptom and leaves the cause (the file
+    // was never created) out entirely.
+    if (String(err.message).includes("no-file")) {
+      throw new Error(
+        `showInHostLeaf("${path}"): vault still had no such file after 8000ms. ` +
+        `It was deleted, or the create that should have made it never landed ` +
+        `on this path.`
+      );
+    }
+    throw err;
+  }
   if (out.includes("no-leaf")) {
     // Nothing to reuse — bootstrap with an activating open. Expected only at
     // suite start; mid-run it means a leaf was torn down unexpectedly.
@@ -154,11 +193,20 @@ function showInHostLeaf(path: string): void {
   }
 }
 
-/** Create and open the shared host leaf. The only window-raise in a run. */
+/**
+ * Open the shared host leaf. The only window-raise in a run.
+ *
+ * The note is a COMMITTED FIXTURE, not created here. `create` does not fail on
+ * a name that is taken — it succeeds having made "_e2e_host 1.md" instead
+ * (pattern 16) — so creating it each run meant any run that started with the
+ * note still present, i.e. any run killed before its cleanup, orphaned another
+ * numbered copy into this git-tracked vault. Committing it removes the failure
+ * mode rather than guarding it: there is no create left to duplicate, and
+ * nothing to delete at the end of a run.
+ */
 function bootstrapHostLeaf() {
-  try { cli(`create name="${HOST_NOTE}" content="e2e host leaf"`); } catch { /* exists */ }
-  // `create` returns before the vault registers the file, and `open` needs it
-  // — the old `create ... open` did both in one command, so this gap is new.
+  // Still polled: the fixture is on disk from the start, but the vault's file
+  // registry populates asynchronously and `open` needs the TFile.
   waitFor(
     `eval code="app.vault.getAbstractFileByPath('${HOST_PATH}') ? 'indexed' : 'waiting'"`,
     (out) => out.includes("indexed"),
@@ -261,7 +309,10 @@ function test(name: string, fn: () => void) {
     passed++;
   } catch (err: any) {
     console.log(`  FAIL  ${name}`);
-    console.log(`        ${err.message.split("\n")[0]}`);
+    // Every line, not just the first: cli() puts the failing command on line
+    // one and the diagnostic (status/code/signal/message/stdout/stderr) after
+    // it, and that is usually the only thing that says WHY a run failed.
+    for (const line of String(err.message).split("\n")) console.log(`        ${line}`);
     failed++;
   }
 }
@@ -1004,8 +1055,9 @@ test("lane delete shows undo toast and restores lane with cards", () => {
 // ── Cleanup ─────────────────────────────────────────────
 
 cleanup();
-// The host leaf's note has to outlive the per-test files, so it is removed here.
-try { cli(`delete path="${HOST_PATH}" permanent`); } catch { /* already gone */ }
+// The host note is NOT deleted: it is a committed fixture (see
+// bootstrapHostLeaf). Removing it here is what left the vault in a state where
+// the next run's `create` silently made "_e2e_host 1.md".
 
 console.log(`\n  ${passed} passed, ${failed} failed\n`);
 process.exit(failed > 0 ? 1 : 0);
