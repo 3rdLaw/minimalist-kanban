@@ -115,15 +115,19 @@ own, and the archive/undo tests need the plugin's own bookkeeping intact.
 
 ### 7. Sweep created files at end of run, not only inline
 
-Tests still delete their own boards inline where the next test depends on it
-(the drag pair share `DRAG_PATH`; the context-menu group shares
-`ACTIONS_PATH`), so per-test deletion is *not* appropriate here. But an inline
-delete only runs if the test reached it. `createNote()` registers every path
-and the end-of-run sweep removes them, so a thrown test cannot leak a file into
-the tracked vault — or into the next run, where `create` would silently turn
-the leftover into a numbered duplicate.
+Setup overwrites (`createNote()` deletes before creating), so a leftover file
+never changes what a test sees. What it would change is the *vault*, which is
+tracked in git — and an inline delete at the end of a test only runs if the test
+got that far. `createNote()` registers every path and the end-of-run sweep
+removes them, so a thrown test cannot leak a file into the repo, or into the
+next run where `create` would silently turn the leftover into a numbered
+duplicate.
 
 `Link Target.md` was leaking exactly this way.
+
+Deletion is deliberately end-of-run rather than per-test: deleting a file the
+host leaf is showing can tear the leaf down, which is one source of the
+empty-view windows described above.
 
 ---
 
@@ -164,35 +168,46 @@ E2E="link suggest" npm run test:e2e
 Case-insensitive substring of the test name. Everything else is skipped and the
 summary reports the skip count. The full run is ~3 minutes; one test is seconds.
 
-The shared board is created inside the *"create kanban file and open it"* test,
-and most later tests assert against the board it left open. Under a filter that
-test is usually skipped, so the runner calls `createBoard()` once before the
-first test that does run. Without that, nearly every filtered selection would
-fail on a board that was never opened.
+**Every test passes on its own.** All 23 were verified individually, not
+inferred — if one only passes as part of a full run, that is a bug in the test.
 
-Two groups work on a board other than the default, built by the first test in
-the group. Each member calls `ensureDragBoard()` / `ensureActionsBoard()`, which
-build that board only if it is not already the open one — so a full run is
-unaffected (the builder already opened it and the ensure is a no-op), while a
-filtered run gets the board it needs.
+## Every test sets up its own state
 
-What that cannot fix is a test asserting on a *mutation* an earlier test made
-rather than just needing a board. Four are in that position and only pass in a
-full run:
+The suite used to share one board across the whole run. That was convenient and
+wrong: a test's meaning depended on which tests had run before it. `toggle back
+restores board` asserted 4 lanes only because an earlier test added one; the
+archive tests asserted against `## Renamed`, a lane title a *third* test set;
+`checkbox` expected 4 cards because `duplicate card` had made one. None could be
+run — or read — in isolation, and one early failure cascaded through the group.
 
-| test | needs |
-|---|---|
-| `checkbox: toggling a card checkbox writes [x]` | the card `context menu: duplicate card` added |
-| `archive card: undo restores it, redo-archive persists to file` | lane state from the tests before it |
-| `archive card: restore returns it to the last lane` | the card archived by the test before it |
-| `lane delete shows undo toast and restores lane with cards` | the lane count earlier tests left |
+The rules now:
 
-Everything else runs alone. Verified individually: `renders 3 lanes`,
-`drag: card moves across lanes`, `drag: lane reorder`, `context menu:
-duplicate card`, `context menu: move to top` and `lane rename` all pass under a
-filter; the four above and `toggle back to kanban view restores board` (which
-needs the preceding toggle-to-markdown) do not — for this reason, not because
-they are broken.
+- **Build what you need.** Call `createBoard()`, `setupDragBoard()` or
+  `setupActionsBoard()` at the top of the test. They are unconditional;
+  `createNote()` deletes before creating, so setup doubles as teardown of
+  whatever the last test left. Never assume a board is already open — the two
+  `link suggest:` tests drive the *"Write tests"* card and so need
+  `createBoard()` even though their subject is a different note.
+- **Restore global state in a `finally`.** Plugin settings and mobile emulation
+  are process-wide. `showCheckboxes` and `showArchive` were switched on by one
+  test and off by a *later* one, so running either alone left the plugin
+  misconfigured for everything after. Use `setPluginSetting()`, which returns a
+  restore function, and call it in a `finally` so a failed assertion cannot
+  leak the setting.
+- **Assert against your own setup**, never against a value an earlier test
+  produced. If an assertion needs a duplicated card or an archived one, do the
+  duplicating or archiving in that test.
+- Files do not need per-test deletion: setup overwrites, and the end-of-run
+  sweep clears the vault. Deleting mid-run risks tearing down the leaf.
 
-Making those five standalone means rewriting their assertions to set up the
-state they check rather than inherit it. Worth doing when next editing them.
+### Grouping
+
+Tests that assert several things about the *same unmutated* board are one test,
+not several — otherwise each would rebuild the same board to check one line.
+`board renders lanes, titles and cards, and round-trips to file` is five former
+tests. Likewise, steps that are only meaningful in sequence are one test:
+toggling to markdown and back is a round trip, and the archive lifecycle
+(archive, undo, re-archive, restore) is one flow.
+
+That took the suite from 29 tests to 23 — and made it *faster* (~2m50s), since
+the merges removed board rebuilds that bought nothing.
