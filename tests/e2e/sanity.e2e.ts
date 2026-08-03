@@ -1,6 +1,6 @@
 import { execSync } from "child_process";
 import assert from "node:assert/strict";
-import { initBridge, bridgeTry, stopBridge } from "./bridge";
+import { initBridge, bridgeTry, stopBridge, bridgeExpectReload } from "./bridge";
 
 const VAULT = process.env.OBSIDIAN_E2E_VAULT || "minimalist-kanban-vault";
 initBridge(VAULT);
@@ -703,6 +703,10 @@ test("toggling to markdown view and back restores the board", () => {
 
 test("mobile mode: lanes do not extend past board bottom", () => {
   createBoard();
+  // emulateMobile ends in window.location.reload(), which takes the bridge's
+  // poller with it. Announced, so the call gives up in 3s instead of sitting
+  // out the 15s ceiling waiting for a reply that died with the page.
+  bridgeExpectReload();
   evaluate("app.emulateMobile(true)");
   try {
     sleep(500);
@@ -729,6 +733,7 @@ test("mobile mode: lanes do not extend past board bottom", () => {
     // Mobile emulation is process-wide. Leaving it on when the assertion above
     // fails would put every later test in mobile layout, so restore it here
     // rather than at the end of the happy path.
+    bridgeExpectReload();
     evaluate("app.emulateMobile(false)");
     sleep(300);
     cli("plugin:reload id=minimalist-kanban");

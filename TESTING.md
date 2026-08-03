@@ -128,22 +128,32 @@ Tested and does **not** help: `--nosocket=wayland`, `--nosocket=x11`, clearing
 `DESKTOP_STARTUP_ID`/`XDG_ACTIVATION_TOKEN`, GNOME `focus-new-windows='strict'`.
 The launch itself is the problem.
 
-`eval` and `dev:dom` are 86% of calls and neither needs a process. `bridge.ts`
-installs a poller inside the renderer — one launch, at bootstrap — that reads a
-request file and writes a reply: **24ms per call instead of 770ms**, 324
-launches down to 129, and the run from 2m50s to 2m02s. (fleet-tables, with 974
-calls a run, went from 8m59s to 2m22s.)
+Almost no command needs a process — each has a direct equivalent against the
+already-loaded `app`. `bridge.ts` installs a poller inside the renderer — one
+launch, at bootstrap — that reads a request file and writes a reply: **24ms per
+call instead of 770ms, 324 launches down to 10, and the run from 2m50s to
+90s**. (fleet-tables went from 974 launches and 8m59s to 8 and 84s.)
 
 - **Every failure path falls back to the CLI**, so the bridge can only make the
-  suite faster, never less able to run. `E2E_NO_BRIDGE=1` forces the old path —
-  use it to check whether a failure is the bridge's fault.
+  suite faster, never less able to run. `E2E_NO_BRIDGE=1` forces the old path;
+  `E2E_BRIDGE_SKIP="open,command"` demotes individual kinds, which is how to
+  bisect a behaviour change.
 - **Request files live under `~/.cache`, never in the vault**: a vault write
   would fire Obsidian's file events on every call and perturb the tests.
 - It reproduces CLI output exactly (`=> ` prefixes, `No elements found.`,
-  `Error: ...` at rc=0, and the CLI's promise handling), so callers cannot tell
-  which transport served them.
-- Still spawning: `read`, `create`, `delete`, `open`. Bridging those too would
-  take a run to ~10 launches — worth doing, not done yet.
+  `Error: ...` at rc=0, `Created: Name 1.md` for a taken name, and the CLI's
+  promise handling), so callers cannot tell which transport served them.
+- **`plugin:reload`/`enable`/`disable` stay on the CLI.** A bridged
+  disable+enable pair is not equivalent: it took the sibling fleet-tables suite
+  to 43/64, every failure in a feature hanging off editor extensions or
+  markdown post-processors. Those 5 launches a run are the price of a reload
+  that actually reloads.
+- **`app.emulateMobile()` reloads the renderer** and takes the poller with it,
+  so the mobile test calls `bridgeExpectReload()` first — otherwise the call
+  waits out the full 15s ceiling for a reply that died with the page. This is
+  explicit rather than inferred on purpose: an earlier heartbeat-based guess
+  could not tell a reloaded renderer from a busy one, and kept declaring a
+  working bridge dead.
 
 ### 8. Wait for output only the plugin can produce
 
