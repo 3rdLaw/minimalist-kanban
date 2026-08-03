@@ -1,7 +1,9 @@
 import { execSync } from "child_process";
 import assert from "node:assert/strict";
+import { initBridge, bridgeTry, stopBridge } from "./bridge";
 
 const VAULT = process.env.OBSIDIAN_E2E_VAULT || "minimalist-kanban-vault";
+initBridge(VAULT);
 const TEST_FILE = "E2E Sanity Test";
 const TEST_PATH = `${TEST_FILE}.md`;
 
@@ -24,6 +26,13 @@ const KANBAN_CONTENT = [
 // ── CLI helpers ─────────────────────────────────────────
 
 function cli(cmd: string, retries = 2): string {
+  // eval and dev:dom go through the in-renderer bridge, which needs no process
+  // and so never raises the window. It returns null when it cannot serve a
+  // command — or cannot be reached — and this falls through to the CLI
+  // unchanged. See bridge.ts.
+  const bridged = bridgeTry(cmd);
+  if (bridged !== null) return bridged;
+
   const full = `obsidian vault="${VAULT}" ${cmd}`;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
@@ -226,11 +235,27 @@ function cleanup() {
 // ── Per-test state hygiene ──────────────────────────────
 
 /**
+ * Put the plugin's settings in a known state before anything runs.
+ *
+ * They persist to the plugin's data.json, which is NOT tracked in git — so
+ * whatever the last run happened to leave there silently decided how this run
+ * behaves. Pinning them here means a suite result depends on the suite, not on
+ * the machine it runs on. Tests that need a setting on still set it themselves.
+ */
+function resetPluginSettings(): void {
+  evaluate(
+    "const p = app.plugins.plugins['minimalist-kanban']; " +
+    "p.settings.showCheckboxes = false; p.settings.showArchive = false; " +
+    "p.settings.enterNewline = false; p.settings.prependCards = false; " +
+    "p.saveSettings()"
+  );
+}
+
+/**
  * Every note the suite has created, deleted at the end of a run.
  *
- * Deliberately NOT deleted per test: several tests hand a board to the next one
- * (the two drag tests share DRAG_PATH, the context-menu group shares
- * ACTIONS_PATH), so per-test deletion would pull files out from under them.
+ * Deliberately NOT deleted per test: setup overwrites (createNote deletes
+ * first), and deleting a file the host leaf is showing can tear the leaf down.
  * This is the safety net for the case that actually leaks — a test that throws
  * before reaching its own inline delete.
  */
@@ -399,14 +424,48 @@ const setupActionsBoard = () => setupBoard(ACTIONS_FILE, ACTIONS_PATH, ACTIONS_C
  * one test and switched off by a LATER one, so running either alone left the
  * plugin misconfigured for everything after it.
  */
+/**
+ * Read where the accepted suggestion ended up, without assuming the editor is
+ * still open.
+ *
+ * Accepting with Enter normally leaves the textarea open, but Item.svelte also
+ * treats Enter as submit, so the card can close and commit instead — and then
+ * reading `.kb-item-edit`.value threw "Cannot read properties of null", which
+ * surfaced as an unparseable-JSON error naming nothing useful. The link text is
+ * what the test is actually about, so look for it wherever it landed and report
+ * the whole state when it is nowhere.
+ */
+function cardTextAfterAccept(): { text: string; state: string } {
+  const raw = evaluate(
+    "(() => {" +
+    "  const ta = document.querySelector('.kb-item-edit');" +
+    "  const titles = [...document.querySelectorAll('.kb-item-title')].map(e => e.textContent.trim());" +
+    "  const suggestions = document.querySelectorAll('.kb-link-suggest .suggestion-title').length;" +
+    "  return JSON.stringify({ open: !!ta, value: ta ? ta.value : null, titles, suggestions });" +
+    "})()"
+  );
+  const s = JSON.parse(raw.replace(/^=> /, ""));
+  return {
+    text: s.open ? s.value : s.titles.join(" | "),
+    state: JSON.stringify(s),
+  };
+}
+
 function setPluginSetting(key: string, value: boolean): () => void {
   const apply = (v: boolean) =>
     evaluate(
       `const p = app.plugins.plugins['minimalist-kanban']; ` +
       `p.settings.${key} = ${v}; p.saveSettings()`
     );
+  // Restore what was actually there, not `!value`. Settings persist to the
+  // plugin's data.json, which is NOT tracked in git — so assuming the previous
+  // value was the opposite let a test that set an already-true setting flip it
+  // false for every later run on this machine.
+  const previous = evaluate(
+    `app.plugins.plugins['minimalist-kanban'].settings.${key}`
+  ).includes("true");
   apply(value);
-  return () => { try { apply(!value); } catch { /* best effort */ } };
+  return () => { try { apply(previous); } catch { /* best effort */ } };
 }
 
 // ── Test runner ─────────────────────────────────────────
@@ -452,6 +511,7 @@ if (E2E_FILTER) console.log(`  Filter: "${E2E_FILTER}"\n`);
 
 cleanup();
 bootstrapHostLeaf();
+resetPluginSettings();
 
 // ── Plugin lifecycle ────────────────────────────────────
 
@@ -781,25 +841,25 @@ test("link suggest: [[ triggers file autocomplete in card edit", () => {
   );
   sleep(300);
 
-  // Verify textarea contains [[Link Target]]
-  const result = evaluate(
-    "JSON.stringify(document.querySelector('.kb-item-edit').value)"
-  );
-  const value = JSON.parse(result.replace(/^=> /, ""));
+  // Verify the accepted suggestion landed, open editor or committed card
+  const accepted = cardTextAfterAccept();
   assert.ok(
-    value.includes("[[Link Target]]"),
-    `Expected [[Link Target]] in value: ${value}`
+    accepted.text.includes("[[Link Target]]"),
+    `Expected [[Link Target]] after accept. State: ${accepted.state}`
   );
 
-  // Verify suggest popup is hidden (no is-active class)
+  // Verify suggest popup is hidden. A popup that was removed outright is also
+  // hidden — reading .classList off null used to throw here instead.
   const hasActive = evaluate(
-    "document.querySelector('.kb-link-suggest').classList.contains('is-active')"
+    "(() => { const el = document.querySelector('.kb-link-suggest');" +
+    " return el ? el.classList.contains('is-active') : false; })()"
   );
   assert.ok(hasActive.includes("false"), "Suggest should not have is-active class after accept");
 
-  // Escape to cancel edit without saving
+  // Escape to cancel edit without saving — no-op if Enter already committed it
   evaluate(
-    "document.querySelector('.kb-item-edit').dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true}))"
+    "const ta = document.querySelector('.kb-item-edit');" +
+    " if (ta) ta.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true}))"
   );
   sleep(200);
 });
@@ -843,19 +903,17 @@ test("link suggest: # shows heading autocomplete", () => {
   );
   sleep(300);
 
-  // Verify textarea contains the heading link
-  const result = evaluate(
-    "JSON.stringify(document.querySelector('.kb-item-edit').value)"
-  );
-  const value = JSON.parse(result.replace(/^=> /, ""));
+  // Verify the heading link landed, open editor or committed card
+  const accepted = cardTextAfterAccept();
   assert.ok(
-    value.includes("[[Link Target#Important Section]]"),
-    `Expected heading link in value: ${value}`
+    accepted.text.includes("[[Link Target#Important Section]]"),
+    `Expected heading link after accept. State: ${accepted.state}`
   );
 
-  // Escape to cancel edit
+  // Escape to cancel edit — no-op if Enter already committed it
   evaluate(
-    "document.querySelector('.kb-item-edit').dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true}))"
+    "const ta = document.querySelector('.kb-item-edit');" +
+    " if (ta) ta.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true}))"
   );
   sleep(200);
   // The helper note is not deleted here. An inline cleanup only runs when the
@@ -1139,9 +1197,14 @@ test("archive card: archive, undo, re-archive, then restore", () => {
       (out) => out.includes("gamma"),
       3000
     );
+    // Wait for the plugin's OWN serialization, not for text the setup content
+    // already had. serializeItem() normalises every card to "- [ ] title", so
+    // that form appears only after a plugin save — whereas plain "gamma" is in
+    // ACTIONS_CONTENT from the start, and this predicate used to pass against
+    // the un-archived file without ever waiting for the undo to land.
     let saved = waitFor(
       `read path="${ACTIONS_PATH}"`,
-      (c) => c.includes("gamma") && !c.includes("## Archive"),
+      (c) => /## Two\n- \[ \] gamma/.test(c) && !c.includes("## Archive"),
       8000
     );
     assert.ok(/## Two\n- \[ \] gamma/.test(saved), `gamma not restored to its lane:\n${saved}`);
@@ -1165,7 +1228,7 @@ test("archive card: archive, undo, re-archive, then restore", () => {
     clickMenuItem("Restore card");
     saved = waitFor(
       `read path="${ACTIONS_PATH}"`,
-      (c) => !c.includes("## Archive"),
+      (c) => !c.includes("## Archive") && /## Two\n- \[ \] gamma/.test(c),
       8000
     );
     assert.ok(/## Two[\s\S]*- \[ \] gamma/.test(saved), `gamma not restored:\n${saved}`);
@@ -1192,7 +1255,14 @@ test("lane delete shows undo toast and restores lane with cards", () => {
   evaluate("document.querySelector('.kb-undo-btn').click()");
   waitFor('dev:dom selector=".kb-lane" total', (o) => o.includes("2"), 5000);
 
-  const saved = waitFor(`read path="${ACTIONS_PATH}"`, (c) => c.includes("## Two"), 8000);
+  // "## Two" is in ACTIONS_CONTENT, so waiting for it matched the file before
+  // the delete had even been written. Wait for the restored card in the
+  // plugin's normalised form, which only a save can produce.
+  const saved = waitFor(
+    `read path="${ACTIONS_PATH}"`,
+    (c) => /## Two\n- \[ \] gamma/.test(c),
+    8000
+  );
   assert.ok(/## Two[\s\S]*- \[ \] gamma/.test(saved), `Lane restored without cards:\n${saved}`);
 });
 
@@ -1210,6 +1280,10 @@ for (const path of createdPaths) {
 // The host note is NOT swept: it is a committed fixture (see bootstrapHostLeaf)
 // and createNote never registered it. Removing it here is what left the vault
 // in a state where the next run's `create` silently made "_e2e_host 1.md".
+
+// The poller is a window-level interval, so it outlives this process. Stop it
+// so a hand-driven Obsidian is not left polling a file forever.
+stopBridge();
 
 const parts = [`${passed} passed`, `${failed} failed`];
 if (skipped > 0) parts.push(`${skipped} skipped`);

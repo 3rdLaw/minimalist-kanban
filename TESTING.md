@@ -113,7 +113,62 @@ failures, and the second named an innocent test.
 Toasts (`.kb-undo-notice`) are deliberately left alone — they expire on their
 own, and the archive/undo tests need the plugin's own bookkeeping intact.
 
-### 7. Sweep created files at end of run, not only inline
+### 7. Don't spawn a process per command — the bridge
+
+`obsidian <cmd>` is not a thin client. It is
+`flatpak run md.obsidian.Obsidian <cmd>`: a **full Obsidian launch** that hands
+the command to the running instance over Electron's single-instance IPC, then
+exits. It costs ~770ms, and the launching instance **takes focus before it
+quits** — with Obsidian focused, one `obsidian tabs` fires a window `blur` and
+`document.hasFocus()` goes false. At 324 calls a run, that is what made the
+machine unusable while the suite ran. `_e2e_host.md` was committed with
+`asehae` typed into it: keystrokes that went to the raised window.
+
+Tested and does **not** help: `--nosocket=wayland`, `--nosocket=x11`, clearing
+`DESKTOP_STARTUP_ID`/`XDG_ACTIVATION_TOKEN`, GNOME `focus-new-windows='strict'`.
+The launch itself is the problem.
+
+`eval` and `dev:dom` are 86% of calls and neither needs a process. `bridge.ts`
+installs a poller inside the renderer — one launch, at bootstrap — that reads a
+request file and writes a reply: **24ms per call instead of 770ms**, 324
+launches down to 129, and the run from 2m50s to 2m02s. (fleet-tables, with 974
+calls a run, went from 8m59s to 2m22s.)
+
+- **Every failure path falls back to the CLI**, so the bridge can only make the
+  suite faster, never less able to run. `E2E_NO_BRIDGE=1` forces the old path —
+  use it to check whether a failure is the bridge's fault.
+- **Request files live under `~/.cache`, never in the vault**: a vault write
+  would fire Obsidian's file events on every call and perturb the tests.
+- It reproduces CLI output exactly (`=> ` prefixes, `No elements found.`,
+  `Error: ...` at rc=0, and the CLI's promise handling), so callers cannot tell
+  which transport served them.
+- Still spawning: `read`, `create`, `delete`, `open`. Bridging those too would
+  take a run to ~10 launches — worth doing, not done yet.
+
+### 8. Wait for output only the plugin can produce
+
+A `waitFor` predicate must not be satisfiable by the content the test itself
+just wrote, or it waits for nothing and the next assertion races the real write.
+
+Two predicates here did exactly that. `serializeItem()` normalises cards to
+`- [ ] title`, so that form appears only after a plugin save — but the
+predicates looked for plain `gamma` and `## Two`, both in `ACTIONS_CONTENT`
+from the start. They passed against the un-archived file, having never waited
+for the undo at all. Nothing failed until the bridge made the suite ~30×
+faster and the race began to lose.
+
+Ask of every predicate: *could this be true before the action happened?* If
+yes, it is not a wait.
+
+### 9. Pin ambient state the tests depend on
+
+The plugin's settings persist to `data.json`, which is **not** tracked in git —
+so whatever the last run left there silently decided how the next run behaved.
+`resetPluginSettings()` pins all four at suite start, and `setPluginSetting()`
+now restores the value it actually found rather than assuming `!value` (which
+flipped an already-true setting to false, permanently, for that machine).
+
+### 10. Sweep created files at end of run, not only inline
 
 Setup overwrites (`createNote()` deletes before creating), so a leftover file
 never changes what a test sees. What it would change is the *vault*, which is
