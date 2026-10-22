@@ -1,6 +1,6 @@
 {
   "name": "minimalist-kanban",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "description": "Minimalist markdown-backed Kanban boards for Obsidian",
   "license": "MIT",
   "main": "main.js",
@@ -25,7 +25,7 @@
     "@types/node": "^26.6.5",
     "@types/sortablejs": "^1.15.0",
     "@typescript-eslint/parser": "^8.72.0",
-    "@vitest/coverage-v8": "^4.1.12",
+    "@vitest/coverage-v8": "^5.0.5",
     "esbuild": "^0.28.2",
     "esbuild-svelte": "^0.9.5",
     "eslint": "^10.13.0",
@@ -38,7 +38,7 @@
     "svelte-preprocess": "^6.0.5",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.72.0",
-    "vitest": "^4.1.12"
+    "vitest": "^5.0.5"
   },
   "dependencies": {
     "monkey-around": "^3.0.0",
