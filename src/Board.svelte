@@ -17,6 +17,12 @@
   let laneSortable;
   let undoNotice = null;
   let undoSubjectId = null;
+  // Card and archive menus close over the lane and card objects they were
+  // opened on. Once the board is replaced those objects are no longer on
+  // screen, and acting on them would save a card twice or drop it, so the
+  // menu must not outlive the board it was built from.
+  let openMenu = null;
+  let destroyed = false;
 
   onMount(() => {
     laneSortable = new Sortable(boardEl, {
@@ -77,9 +83,8 @@
   // The undo closures reference this component's board; if the component
   // is torn down (file closed, external re-render) the toast must go too.
   onDestroy(() => {
-    undoNotice?.hide();
-    undoNotice = null;
-    undoSubjectId = null;
+    destroyed = true;
+    retireBoardState();
   });
 
   function save() {
@@ -93,9 +98,21 @@
    * remount would have.
    */
   export function externalUpdate() {
+    retireBoardState();
+  }
+
+  function retireBoardState() {
     undoNotice?.hide();
     undoNotice = null;
     undoSubjectId = null;
+    openMenu?.hide();
+    openMenu = null;
+  }
+
+  function showMenu(menu, event) {
+    openMenu?.hide();
+    openMenu = menu;
+    menu.showAtMouseEvent(event);
   }
 
   /**
@@ -398,7 +415,7 @@
         })
     );
 
-    menu.showAtMouseEvent(event);
+    showMenu(menu, event);
   }
 
   // ── Archive lane actions ───────────────────────────────
@@ -480,7 +497,7 @@
         })
     );
 
-    menu.showAtMouseEvent(event);
+    showMenu(menu, event);
   }
 
   // ── New note from card ─────────────────────────────────
@@ -509,15 +526,23 @@
       n++;
     }
 
+    const originalTitle = item.title;
     const newFile = await app.vault.create(fullPath, "");
 
     // Open in new pane
     const leaf = app.workspace.getLeaf("split");
     await leaf.openFile(newFile);
 
-    // Update card title to link
-    const link = app.fileManager.generateMarkdownLink(newFile, filePath);
-    item.title = link;
+    // The board may have been replaced while awaiting (an external change):
+    // link the card only if it is still on screen, unchanged.
+    const current = destroyed
+      ? null
+      : board.lanes.flatMap((l) => l.items).find((i) => i.id === item.id);
+    if (!current || current.title !== originalTitle) {
+      new Notice(`Created ${newFile.path}, but the card changed before it could be linked.`);
+      return;
+    }
+    current.title = app.fileManager.generateMarkdownLink(newFile, filePath);
     board = board;
     save();
   }

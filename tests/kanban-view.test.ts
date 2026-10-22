@@ -241,5 +241,160 @@ describe("KanbanView", () => {
 
       expect(undo.hidden).toBe(true);
     });
+
+    async function openCardMenu(view: KanbanView, index: number) {
+      const { Menu } = await import("obsidian");
+      const before = (Menu as any).instances.length;
+      const btns = view.contentEl.querySelectorAll<HTMLElement>(".kb-item .kb-menu-btn");
+      await fireEvent.click(btns[index]);
+      return (Menu as any).instances[before];
+    }
+
+    test("an in-place update closes a card menu opened on the old board", async () => {
+      const { view } = makeAttachedView();
+      view.setViewData(MD, true);
+      const menu = await openCardMenu(view, 0);
+      expect(menu.hidden).toBe(false);
+
+      view.setViewData(REMOTE_CARD, false);
+
+      expect(menu.hidden).toBe(true);
+    });
+
+    test("an in-place update closes an archive card menu", async () => {
+      const { view, plugin } = makeAttachedView();
+      plugin.settings.showArchive = true;
+      const withArchive = MD + "\n---\n\n## Archive\n\n- [x] Old\n";
+      view.setViewData(withArchive, true);
+      const { Menu } = await import("obsidian");
+      const before = (Menu as any).instances.length;
+      await fireEvent.click(view.contentEl.querySelector<HTMLElement>(".kb-archive-item .kb-menu-btn")!);
+      const menu = (Menu as any).instances[before];
+
+      view.setViewData(withArchive.replace("- [ ] Task A\n", "- [ ] Task A\n- [ ] Remote\n"), false);
+
+      expect(menu.hidden).toBe(true);
+    });
+
+    test("a remount closes menus too", async () => {
+      const { view } = makeAttachedView();
+      view.setViewData(MD, true);
+      const menu = await openCardMenu(view, 0);
+      view.setViewData(MD.replace("## Done", "## Finished"), false);
+      expect(menu.hidden).toBe(true);
+    });
+
+    // Removing a focused input blurs it, and a blur commits an inline edit.
+    // That commit comes from the component being replaced, carrying its board.
+    test("a change from the replaced component cannot overwrite the new board", () => {
+      const { view } = makeAttachedView();
+      const spy = vi.spyOn(view, "requestSave");
+      view.setViewData(MD, true);
+      const stale = (view as any).props;
+
+      view.setViewData(MD.replace("## Done", "## Finished"), false);
+      stale.onChange(stale.board);
+
+      expect(view.getViewData()).toContain("## Finished");
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    test("a change from a component torn down by clear() is ignored", () => {
+      const { view } = makeAttachedView();
+      const spy = vi.spyOn(view, "requestSave");
+      view.setViewData(MD, true);
+      const stale = (view as any).props;
+      view.clear();
+      stale.onChange(stale.board);
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    test("clear() hands back unsent text", async () => {
+      const { view } = makeAttachedView();
+      view.setViewData(MD, true);
+      await fireEvent.input(addCardInput(view, 0), { target: { value: "unsent" } });
+
+      view.clear();
+
+      expect(Notice.instances).toHaveLength(1);
+      expect(Notice.instances[0].noticeEl.textContent).toContain("New card in To Do: unsent");
+    });
+
+    test("the rescue notice survives clicks on its text and closes only via Dismiss", async () => {
+      const { view } = makeAttachedView();
+      view.setViewData(MD, true);
+      await fireEvent.input(addCardInput(view, 0), { target: { value: "unsent" } });
+      view.setViewData(MD.replace("## Done", "## Finished"), false);
+
+      const notice = Notice.instances[0];
+      // Obsidian's own hide-on-click listener sits on the notice's container.
+      const container = document.createElement("div");
+      container.appendChild(notice.noticeEl);
+      const hide = vi.spyOn(notice, "hide");
+      container.addEventListener("click", () => notice.hide());
+
+      await fireEvent.click(notice.noticeEl.querySelector("span")!);
+      expect(hide).not.toHaveBeenCalled();
+
+      await fireEvent.click(notice.noticeEl.querySelector(".kb-draft-dismiss")!);
+      expect(hide).toHaveBeenCalledTimes(1);
+    });
+
+    test("remounts while a drag has started (Sortable.active)", () => {
+      const { view } = makeAttachedView();
+      view.setViewData(MD, true);
+      const input = addCardInput(view);
+      (SortableMock as any).active = {};
+      try {
+        view.setViewData(REMOTE_CARD, false);
+      } finally {
+        (SortableMock as any).active = null;
+      }
+      expect(input.isConnected).toBe(false);
+    });
+
+    test("new note from card does not link a card replaced while the note was created", async () => {
+      const { view } = makeAttachedView();
+      let resolveCreate!: (f: { path: string }) => void;
+      (view as any).app = {
+        vault: {
+          create: vi.fn(() => new Promise((r) => { resolveCreate = r; })),
+          getAbstractFileByPath: vi.fn().mockReturnValue(null),
+        },
+        workspace: { getLeaf: vi.fn().mockReturnValue({ openFile: vi.fn().mockResolvedValue(undefined) }) },
+        fileManager: { generateMarkdownLink: vi.fn().mockReturnValue("[[Task B]]") },
+      };
+      view.setViewData(MD, true);
+      const menu = await openCardMenu(view, 1);
+      const pending = menu.findItem("New note from card")._onClick();
+
+      view.setViewData(MD.replace("- [x] Task B", "- [x] Task B, edited remotely"), false);
+      resolveCreate({ path: "Task B.md" });
+      await pending;
+
+      expect(view.getViewData()).toContain("- [x] Task B, edited remotely");
+      expect(view.getViewData()).not.toContain("[[Task B]]");
+      expect(Notice.instances[Notice.instances.length - 1].noticeEl.textContent).toContain("card changed before it could be linked");
+    });
+
+    test("new note from card still links a card whose lane was untouched", async () => {
+      const { view } = makeAttachedView();
+      (view as any).app = {
+        vault: {
+          create: vi.fn().mockResolvedValue({ path: "Task A.md" }),
+          getAbstractFileByPath: vi.fn().mockReturnValue(null),
+        },
+        workspace: { getLeaf: vi.fn().mockReturnValue({ openFile: vi.fn().mockResolvedValue(undefined) }) },
+        fileManager: { generateMarkdownLink: vi.fn().mockReturnValue("[[Task A]]") },
+      };
+      view.setViewData(MD, true);
+      const menu = await openCardMenu(view, 0);
+      const pending = menu.findItem("New note from card")._onClick();
+      view.setViewData(REMOTE_CARD, false);
+      await pending;
+
+      expect(view.getViewData()).toContain("- [ ] [[Task A]]");
+      expect(view.getViewData()).toContain("- [ ] Task C");
+    });
   });
 });

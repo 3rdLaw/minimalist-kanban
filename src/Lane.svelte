@@ -36,6 +36,7 @@
   let newItemTitle = "";
   let addCardInput;
   let linkSuggest;
+  let laneMenu;
 
   onMount(() => {
     sortableInstance = new Sortable(itemsEl, {
@@ -78,6 +79,7 @@
     return () => {
       sortableInstance?.destroy();
       linkSuggest?.destroy();
+      laneMenu?.hide();
     };
   });
 
@@ -106,7 +108,9 @@
   }
 
   function showLaneMenu(e) {
+    laneMenu?.hide();
     const menu = new Menu();
+    laneMenu = menu;
     menu.addItem((i) =>
       i
         .setTitle("Edit list name")

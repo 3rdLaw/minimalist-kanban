@@ -37,6 +37,8 @@ export class Menu {
   }
 
   showAtMouseEvent = vi.fn();
+  hidden = false;
+  hide() { this.hidden = true; return this; }
 
   /** Test helper: find a menu item by title */
   findItem(title: string): MenuItem | undefined {

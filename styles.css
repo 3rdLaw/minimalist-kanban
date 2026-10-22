@@ -361,6 +361,11 @@
 .kb-draft-row span {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.kb-draft-dismiss {
+  align-self: flex-end;
 }
 
 /* Link suggest popup */
