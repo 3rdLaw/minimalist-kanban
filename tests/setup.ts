@@ -42,6 +42,13 @@ if (!(HTMLElement.prototype as any).createEl) {
     return el;
   };
 }
+for (const [name, tag] of [["createDiv", "div"], ["createSpan", "span"]] as const) {
+  if (!(HTMLElement.prototype as any)[name]) {
+    (HTMLElement.prototype as any)[name] = function (this: any, options?: unknown) {
+      return this.createEl(tag, options);
+    };
+  }
+}
 
 beforeEach(() => {
   SortableMock.instances.length = 0;

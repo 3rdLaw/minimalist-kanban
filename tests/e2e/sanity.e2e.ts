@@ -1271,6 +1271,71 @@ test("lane delete shows undo toast and restores lane with cards", () => {
   assert.ok(/## Two[\s\S]*- \[ \] gamma/.test(saved), `Lane restored without cards:\n${saved}`);
 });
 
+// ── External changes (e.g. Obsidian Sync) ───────────────
+
+/**
+ * Rewrite the actions board through the vault, the way a Sync pull lands: a
+ * `modify` event on the open file, handled by TextFileView.onModify. `from`
+ * and `to` are a plain string replacement on the current file content.
+ */
+function externalEdit(from: string, to: string): void {
+  evaluate(
+    `(() => { const f = app.vault.getAbstractFileByPath('${ACTIONS_PATH}');` +
+    ` app.vault.read(f).then(c => app.vault.modify(f, c.replace(${JSON.stringify(from)}, ${JSON.stringify(to)}))); })()`
+  );
+}
+
+/** Type into lane `laneTitle`'s add-card box and tag the element so a remount is detectable. */
+function typeDraft(laneTitle: string, text: string): void {
+  evaluate(
+    "(() => {" +
+    `  const lane = [...document.querySelectorAll('.kb-lane')].find(l => l.querySelector('.kb-lane-title')?.textContent === '${laneTitle}');` +
+    "  const ta = lane.querySelector('.kb-add-item-input');" +
+    "  ta.focus();" +
+    `  ta.value = '${text}';` +
+    "  ta.dispatchEvent(new Event('input', {bubbles:true}));" +
+    "  ta.__kbProbe = true;" +
+    "})()"
+  );
+}
+
+test("external change: a half-typed card survives when the lanes are unchanged", () => {
+  setupActionsBoard();
+  typeDraft("Two", "half-typed");
+  externalEdit("- beta", "- beta\n- remote card");
+  waitFor('dev:dom selector=".kb-item-title" text all', (o) => o.includes("remote card"), 5000);
+
+  const state = JSON.parse(evaluate(
+    "(() => {" +
+    "  const ta = document.activeElement;" +
+    "  return JSON.stringify({ probe: !!ta?.__kbProbe, value: ta?.value ?? null," +
+    "    drafts: document.querySelectorAll('.kb-draft-notice').length });" +
+    "})()"
+  ).replace(/^=> /, ""));
+  assert.deepEqual(state, { probe: true, value: "half-typed", drafts: 0 });
+
+  // Submitting now must file the card under Two, alongside the remote change.
+  evaluate(
+    "document.activeElement.dispatchEvent(new KeyboardEvent('keydown', {key:'Enter', bubbles:true}))"
+  );
+  const saved = waitFor(`read path="${ACTIONS_PATH}"`, (c) => c.includes("half-typed"), 8000);
+  assert.ok(/## One[\s\S]*remote card[\s\S]*## Two[\s\S]*half-typed/.test(saved), `Unexpected file:\n${saved}`);
+});
+
+test("external change: a lane rename remounts and hands back the half-typed card", () => {
+  setupActionsBoard();
+  typeDraft("Two", "half-typed");
+  externalEdit("## Two", "## Two renamed");
+  try {
+    waitForDom(".kb-draft-notice", "1", 5000);
+    const text = domTextAll(".kb-draft-notice");
+    assert.ok(text.includes("New card in Two: half-typed"), `Unexpected notice: ${text}`);
+  } finally {
+    // The notice stays until dismissed; do not leave it for later tests.
+    evaluate("document.querySelectorAll('.kb-draft-notice').forEach(n => n.closest('.notice')?.click())");
+  }
+});
+
 // ── Cleanup ─────────────────────────────────────────────
 
 cleanup();

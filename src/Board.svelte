@@ -87,6 +87,18 @@
   }
 
   /**
+   * Called by the view after it swaps in a re-parsed board without
+   * remounting. The undo closures hold the previous board's lane and card
+   * objects, so they cannot act on the new one; retire the toast as a
+   * remount would have.
+   */
+  export function externalUpdate() {
+    undoNotice?.hide();
+    undoNotice = null;
+    undoSubjectId = null;
+  }
+
+  /**
    * Retires a pending undo whose subject has since been acted on. Without
    * this the "Card archived" toast stays clickable after the card has been
    * restored by hand, and clicking it would do nothing.

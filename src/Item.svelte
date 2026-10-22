@@ -206,6 +206,8 @@
       on:blur={finishEdit}
       on:keydown={handleKeydown}
       on:input={() => autoResize(editInput)}
+      data-draft-original={item.title}
+      data-draft-label="Card"
       class="kb-item-edit"
       rows="1"
     ></textarea>

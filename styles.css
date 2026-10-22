@@ -319,7 +319,8 @@
   gap: 12px;
 }
 
-.kb-undo-btn {
+.kb-undo-btn,
+.kb-draft-copy {
   background: var(--interactive-accent);
   color: var(--text-on-accent);
   border: none;
@@ -331,13 +332,35 @@
   font-weight: 500;
 }
 
-.kb-undo-btn:hover {
+.kb-undo-btn:hover,
+.kb-draft-copy:hover {
   background: var(--interactive-accent-hover);
 }
 
-.is-mobile .kb-undo-btn {
+.is-mobile .kb-undo-btn,
+.is-mobile .kb-draft-copy {
   min-height: 36px;
   padding: 8px 16px;
+}
+
+/* Unsaved text handed back after an external change remounted the board */
+
+.kb-draft-notice {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.kb-draft-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.kb-draft-row span {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* Link suggest popup */

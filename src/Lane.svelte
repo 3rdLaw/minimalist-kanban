@@ -190,6 +190,8 @@
         bind:value={titleDraft}
         on:blur={finishEditTitle}
         on:keydown={handleTitleKeydown}
+        data-draft-original={lane.title}
+        data-draft-label="List name"
         class="kb-lane-title-input"
       />
     {:else}
@@ -223,6 +225,7 @@
       bind:value={newItemTitle}
       on:keydown={handleAddKeydown}
       placeholder="+ Add a card"
+      data-draft-label="New card in {lane.title}"
       class="kb-add-item-input"
       rows="1"
     ></textarea>
