@@ -10,6 +10,8 @@ import BoardComponent from "./Board.svelte";
 
 export const KANBAN_VIEW_TYPE = "kanban-board";
 
+const CLOSED_BEFORE_ADDED = "The board was closed before this was added.";
+
 interface BoardProps {
   // `mount()` types its props bag as an index-signature record, and Board.svelte
   // has a plain-JS script so it contributes no prop types of its own.
@@ -86,7 +88,12 @@ export class KanbanView extends TextFileView {
       this.renderBoard();
     }
     flushSync();
-    this.rescueDrafts(drafts, "This board changed on disk while you were typing.");
+    // `clear` is a file being opened in this view: Obsidian only calls
+    // clear() first when the previous file had unsaved changes.
+    this.rescueDrafts(
+      drafts,
+      clear ? CLOSED_BEFORE_ADDED : "This board changed on disk while you were typing."
+    );
   }
 
   /** Obsidian calls this when the view moves to another file, after saving. */
@@ -106,9 +113,8 @@ export class KanbanView extends TextFileView {
    */
   private teardown() {
     const drafts = this.collectDrafts();
-    const name = this.file?.basename ?? "the board";
     this.destroyComponent();
-    this.rescueDrafts(drafts, `${name} closed before this was added.`);
+    this.rescueDrafts(drafts, CLOSED_BEFORE_ADDED);
   }
 
   onSettingsChanged() {

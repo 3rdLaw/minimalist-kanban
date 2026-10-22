@@ -303,6 +303,12 @@ function resetUiState(): void {
       "      el.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true}));" +
       "      el.blur();" +
       "    });" +
+      // Unsent add-card text would otherwise come back as a draft notice when
+      // the next test replaces the file under the open view.
+      "  document.querySelectorAll('.kb-add-item-input').forEach(el => {" +
+      "    el.value = ''; el.dispatchEvent(new Event('input', {bubbles:true}));" +
+      "  });" +
+      "  document.querySelectorAll('.kb-draft-dismiss').forEach(b => b.click());" +
       // Obsidian's context menu is appended to body and survives a failed click
       "  document.querySelectorAll('.menu').forEach(m => m.remove());" +
       "})()"
@@ -1278,9 +1284,9 @@ test("lane delete shows undo toast and restores lane with cards", () => {
  * `modify` event on the open file, handled by TextFileView.onModify. `from`
  * and `to` are a plain string replacement on the current file content.
  */
-function externalEdit(from: string, to: string): void {
+function externalEdit(from: string, to: string, path = ACTIONS_PATH): void {
   evaluate(
-    `(() => { const f = app.vault.getAbstractFileByPath('${ACTIONS_PATH}');` +
+    `(() => { const f = app.vault.getAbstractFileByPath('${path}');` +
     ` app.vault.read(f).then(c => app.vault.modify(f, c.replace(${JSON.stringify(from)}, ${JSON.stringify(to)}))); })()`
   );
 }
@@ -1304,15 +1310,7 @@ test("external change: a half-typed card survives when the lanes are unchanged",
   typeDraft("Two", "half-typed");
   externalEdit("- beta", "- beta\n- remote card");
   waitFor('dev:dom selector=".kb-item-title" text all', (o) => o.includes("remote card"), 5000);
-
-  const state = JSON.parse(evaluate(
-    "(() => {" +
-    "  const ta = document.activeElement;" +
-    "  return JSON.stringify({ probe: !!ta?.__kbProbe, value: ta?.value ?? null," +
-    "    drafts: document.querySelectorAll('.kb-draft-notice').length });" +
-    "})()"
-  ).replace(/^=> /, ""));
-  assert.deepEqual(state, { probe: true, value: "half-typed", drafts: 0 });
+  assert.deepEqual(draftState(), { probe: true, value: "half-typed", drafts: 0 });
 
   // Submitting now must file the card under Two, alongside the remote change.
   evaluate(
@@ -1320,6 +1318,114 @@ test("external change: a half-typed card survives when the lanes are unchanged",
   );
   const saved = waitFor(`read path="${ACTIONS_PATH}"`, (c) => c.includes("half-typed"), 8000);
   assert.ok(/## One[\s\S]*remote card[\s\S]*## Two[\s\S]*half-typed/.test(saved), `Unexpected file:\n${saved}`);
+});
+
+/** Whether the focused element is still the tagged draft input, and what it holds. */
+function draftState(): { probe: boolean; value: string | null; drafts: number } {
+  return JSON.parse(evaluate(
+    "(() => {" +
+    "  const ta = document.activeElement;" +
+    "  return JSON.stringify({ probe: !!ta?.__kbProbe, value: ta?.value ?? null," +
+    "    drafts: document.querySelectorAll('.kb-draft-notice').length });" +
+    "})()"
+  ).replace(/^=> /, ""));
+}
+
+// SortableJS marks a drag from the first touch on a card, and the board
+// remounts rather than update under a drag. On Android a touch that turns into
+// a scroll ends in pointercancel, which SortableJS does not listen for with
+// native drag support, so the mark outlives the gesture until the next
+// pointerup anywhere. The tap that focuses the add-card box is that pointerup.
+test("external change: a cancelled touch on a card does not force a remount once the box is tapped", () => {
+  setupActionsBoard();
+  evaluate(
+    "(() => {" +
+    "  const card = document.querySelector('.kb-item');" +
+    "  const r = card.getBoundingClientRect();" +
+    "  const at = { bubbles: true, cancelable: true, pointerId: 7, pointerType: 'touch', isPrimary: true," +
+    "    clientX: r.left + 10, clientY: r.top + 5, button: 0 };" +
+    "  card.dispatchEvent(new PointerEvent('pointerdown', at));" +
+    "  card.dispatchEvent(new PointerEvent('pointercancel', at));" +
+    "  document.querySelectorAll('.kb-add-item-input')[1].__kbProbe = true;" +
+    "})()"
+  );
+  // Control: with the mark still set, an external change remounts. Without
+  // this the test would pass whether or not the touch did anything.
+  externalEdit("- beta", "- beta\n- remote one");
+  waitFor('dev:dom selector=".kb-item-title" text all', (o) => o.includes("remote one"), 5000);
+  assert.equal(
+    evaluate("!!document.querySelectorAll('.kb-add-item-input')[1].__kbProbe").replace(/^=> /, ""),
+    "false",
+    "Setup: the cancelled touch should have left SortableJS's drag mark set"
+  );
+
+  evaluate(
+    "(() => {" +
+    "  const ta = document.querySelectorAll('.kb-add-item-input')[1];" +
+    "  const t = ta.getBoundingClientRect();" +
+    "  const tap = { bubbles: true, cancelable: true, pointerId: 8, pointerType: 'touch', isPrimary: true," +
+    "    clientX: t.left + 5, clientY: t.top + 5, button: 0 };" +
+    "  ta.dispatchEvent(new PointerEvent('pointerdown', tap));" +
+    "  ta.dispatchEvent(new PointerEvent('pointerup', tap));" +
+    "})()"
+  );
+  typeDraft("Two", "half-typed");
+  externalEdit("- remote one", "- remote one\n- remote two");
+  waitFor('dev:dom selector=".kb-item-title" text all', (o) => o.includes("remote two"), 5000);
+  assert.deepEqual(draftState(), { probe: true, value: "half-typed", drafts: 0 });
+});
+
+// Removing a focused textarea blurs it in Chromium, and blur commits an
+// inline card edit. That commit must not put the replaced board back.
+test("external change: an inline card edit cut off by a remount cannot revert the remote change", () => {
+  setupActionsBoard();
+  evaluate(
+    "[...document.querySelectorAll('.kb-item-title')].find(e => e.textContent.trim() === 'alpha').click()"
+  );
+  waitForDom(".kb-item-edit", "1", 3000);
+  evaluate(
+    "(() => { const ta = document.querySelector('.kb-item-edit'); ta.focus();" +
+    " ta.value = 'alpha, edited locally'; ta.dispatchEvent(new Event('input', {bubbles:true})); })()"
+  );
+  externalEdit("## Two", "## Two renamed");
+  try {
+    waitFor('dev:dom selector=".kb-draft-notice" total', (o) => o.trim() !== "0", 5000);
+    const notices = domTextAll(".kb-draft-notice");
+    assert.equal(domTotal(".kb-draft-notice"), "1", `Expected one draft notice, got: ${notices}`);
+    assert.ok(notices.includes("alpha, edited locally"), `Edit text not handed back: ${notices}`);
+    // Past the 2s save debounce: a revert would have been written by now.
+    sleep(3000);
+    const saved = cli(`read path="${ACTIONS_PATH}"`);
+    assert.ok(saved.includes("## Two renamed"), `Remote rename reverted:\n${saved}`);
+    assert.ok(!saved.includes("edited locally"), `Stale edit committed:\n${saved}`);
+  } finally {
+    evaluate("document.querySelectorAll('.kb-draft-dismiss').forEach(b => b.click())");
+  }
+});
+
+// Uses the shared test board, as the other mobile test does: emulated mobile
+// keeps its own saved layout (workspace-mobile.json), and whatever board this
+// leaves open there is what the next run's mobile tests open. The test board is
+// recreated at the start of every run; the actions board would be deleted.
+test("external change: mobile layout keeps the half-typed card too", () => {
+  createBoard();
+  bridgeExpectReload();
+  evaluate("app.emulateMobile(true)");
+  try {
+    sleep(500);
+    cli("plugin:reload id=minimalist-kanban");
+    showInHostLeaf(TEST_PATH);
+    waitForDom(".kb-lane", "3", 8000);
+    typeDraft("Done", "half-typed");
+    externalEdit("- Write tests", "- Write tests\n- remote card", TEST_PATH);
+    waitFor('dev:dom selector=".kb-item-title" text all', (o) => o.includes("remote card"), 5000);
+    assert.deepEqual(draftState(), { probe: true, value: "half-typed", drafts: 0 });
+  } finally {
+    bridgeExpectReload();
+    evaluate("app.emulateMobile(false)");
+    sleep(300);
+    cli("plugin:reload id=minimalist-kanban");
+  }
 });
 
 test("external change: a lane rename remounts and hands back the half-typed card", () => {
@@ -1332,7 +1438,7 @@ test("external change: a lane rename remounts and hands back the half-typed card
     assert.ok(text.includes("New card in Two: half-typed"), `Unexpected notice: ${text}`);
   } finally {
     // The notice stays until dismissed; do not leave it for later tests.
-    evaluate("document.querySelectorAll('.kb-draft-notice').forEach(n => n.closest('.notice')?.click())");
+    evaluate("document.querySelectorAll('.kb-draft-dismiss').forEach(b => b.click())");
   }
 });
 
