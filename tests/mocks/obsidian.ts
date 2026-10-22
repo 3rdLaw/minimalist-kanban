@@ -62,9 +62,10 @@ export class Notice {
   noticeEl: HTMLElement;
   hidden = false;
 
-  constructor(message: string, _timeout?: number) {
+  constructor(message: string | DocumentFragment, _timeout?: number) {
     this.noticeEl = document.createElement("div");
-    if (message) this.noticeEl.textContent = message;
+    if (typeof message !== "string") this.noticeEl.appendChild(message);
+    else if (message) this.noticeEl.textContent = message;
     Notice.instances.push(this);
   }
 

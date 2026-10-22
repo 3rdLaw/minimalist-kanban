@@ -17,6 +17,7 @@ Obsidian loads the plugin
 When a kanban file is opened:
  WorkspaceLeaf → KanbanView (extends TextFileView)
    ├─ setViewData()  → parser.ts parseBoard()  → Board data model
+   │                    (on an external change: reconcile.ts, then update in place)
    ├─ getViewData()  → parser.ts serializeBoard() → Markdown string
    └─ renderBoard()  → mounts Board.svelte
         ├─ Board.svelte  – manages lanes array, lane-level Sortable, events
@@ -26,6 +27,8 @@ When a kanban file is opened:
 ```
 
 Data flows one way: user action → callback prop (`onItemAdd`, `onLaneMove`, …) → Board handler → mutate `board` → `save()` → `onChange` callback → `KanbanView.requestSave()` → `TextFileView` writes Markdown to disk.
+
+Changes from outside the view — Obsidian Sync, another device, another pane editing the same file — come back in through `setViewData(data, false)`. See design constraint 7.
 
 ### Frontmatter convention
 
@@ -46,8 +49,9 @@ The plugin intercepts `setViewState` on all workspace leaves so that opening suc
 | File | Purpose |
 |---|---|
 | `main.ts` | Plugin entry point. Registers view, commands ("Create new Kanban board", "Toggle Kanban/Markdown view"), settings tab, and the `setViewState` monkey-patch for auto-redirect. |
-| `KanbanView.ts` | `TextFileView` subclass. Bridges Obsidian's file I/O with the Svelte component tree. Calls `parseBoard`/`serializeBoard` and mounts `Board.svelte`. |
+| `KanbanView.ts` | `TextFileView` subclass. Bridges Obsidian's file I/O with the Svelte component tree. Calls `parseBoard`/`serializeBoard` and mounts `Board.svelte`; on an external change, updates the mounted board in place or remounts, and hands back any uncommitted text a remount destroyed. |
 | `parser.ts` | Pure-function Markdown ↔ Board serialization. Parses `## ` headings as lanes, `- ` items as cards (with optional `[ ]`/`[x]` checkboxes), supports multi-line card text (indented continuation, including tab-indented and interior blank lines), and an archive section delimited by `---` followed by `## Archive`. Opaque Markdown is preserved in card-relative blocks so notes, code fences, and other unrecognized content are not moved past later cards on save; blank lines between preamble paragraphs also survive. CRLF input is normalized to LF. Card text containing `---`/`## ` lines is escaped via indentation and cannot corrupt the board structure. Board syntax is column-sensitive in the CommonMark sense: a heading, card, fence or archive marker is only recognized within three spaces of the left margin, so indented code blocks stay opaque. |
+| `reconcile.ts` | `reconcileIds()`: carries ids from the board on screen onto a freshly parsed one, by equality only, so an external change can update the mounted component in place. See design constraint 7. |
 | `types.ts` | TypeScript interfaces: `Board`, `Lane`, `Item`, plus `generateId()`. |
 | `settings.ts` | `KBSettings` interface, defaults, and `PluginSettingTab` implementation. Four settings: show checkboxes, enter-key behavior, prepend new cards, show archive list. |
 | `sortable.ts` | Thin wrapper (`getSortable()`) that returns either the real SortableJS constructor or a test mock injected via `window.__TEST_SORTABLE__`. |
@@ -73,7 +77,7 @@ The plugin intercepts `setViewState` on all workspace leaves so that opening suc
 
 | File | Purpose |
 |---|---|
-| `setup.ts` | Vitest setup: loads `@testing-library/jest-dom` matchers, injects `SortableMock` via `window.__TEST_SORTABLE__`, stubs Obsidian's `HTMLElement` helpers (`empty`, `addClass`, `createEl`, `setCssProps`), resets mock state between tests. |
+| `setup.ts` | Vitest setup: loads `@testing-library/jest-dom` matchers, injects `SortableMock` via `window.__TEST_SORTABLE__`, stubs Obsidian's DOM helpers (`empty`, `addClass`, `createEl`/`createDiv`/`createSpan` on `Node`, the global `createFragment`, `setCssProps`), resets mock state between tests. |
 | `parser.test.ts` | `parseBoard`/`serializeBoard`: frontmatter, lanes, items, checkboxes, multi-line cards, archive, round-trip fidelity, structure-injection resistance (cards containing `---`/`## `), and content preservation (user frontmatter, preamble, code fences, unrecognized lines). |
 | `parser-properties.test.ts` | The parser's two invariants, asserted over a corpus of adversarial documents and 300 seeded fuzz documents: one save is a fixed point, and any line not recognized as board syntax is re-emitted byte-for-byte. |
 | `item.test.ts` | `Item.svelte`: rendering, inline editing, keyboard handling, checkbox toggle, enter/shift+enter behavior with settings, link-suggest cleanup on unmount. |
@@ -81,7 +85,8 @@ The plugin intercepts `setViewState` on all workspace leaves so that opening suc
 | `board.test.ts` | `Board.svelte`: adding lanes/items, deleting, renaming, moving lanes, card context menu actions (duplicate, move to top/bottom, move to list, archive), drag-and-drop via SortableJS `onEnd` simulation, new note from card, per-action undo toasts. |
 | `link-suggest.test.ts` | `LinkSuggest`: trigger detection, file/heading search, keyboard navigation, acceptance, lifecycle. |
 | `main.test.ts` | `main.ts`: the `setViewState` redirect patch (and its uninstall), `checkIsKanban` cache/content fallback, view toggling, board creation (default folder, name collisions), settings persistence, toolbar button injection. |
-| `kanban-view.test.ts` | `KanbanView`: parse → render → serialize round-trip through the view, frontmatter preservation, `onChange` → `requestSave` wiring, clear/close lifecycle, live settings updates. |
+| `kanban-view.test.ts` | `KanbanView`: parse → render → serialize round-trip through the view, frontmatter preservation, `onChange` → `requestSave` wiring, clear/close lifecycle, live settings updates, and external changes — in-place updates that keep focused inputs, remounts, the draft-rescue Notice, menus and undo toasts retired, a replaced component's `onChange` ignored. |
+| `reconcile.test.ts` | `reconcileIds`: which ids carry over for each kind of change, extra-block anchors, duplicate titles, and that reconciling never changes the serialized board. |
 | `settings.test.ts` | `KBSettingTab`: toggle rendering, initial values, change handlers persisting via `saveSettings`. |
 | `mocks/obsidian.ts` | Mock for the `obsidian` module. Provides `Menu`, `MenuItem`, `Platform`, `TFile`, `WorkspaceLeaf`, `Setting`, and stubbed workspace/vault/fileManager objects. |
 | `mocks/sortablejs.ts` | Mock for SortableJS. Records constructor calls in a static `instances` array so tests can inspect options and simulate `onEnd` callbacks. |
@@ -109,6 +114,10 @@ The plugin intercepts `setViewState` on all workspace leaves so that opening suc
 5. **Parent–child communication by callback props.** Components take `onEdit`/`onLaneMove`/… function props rather than `createEventDispatcher` plus `on:` listeners. Handlers receive the payload object directly instead of a `CustomEvent` with a `.detail`.
 
 6. **Single-file bundle.** esbuild produces one `main.js` file with CSS injected inline by the Svelte compiler (`css: "injected"`). No separate CSS extraction step.
+
+7. **External changes update in place when they can, and never lose typed text.** When the file changes underneath an open board (a Sync pull, most often), Obsidian calls `setViewData(data, false)`. Remounting the component there would destroy whatever the user is typing, and close the mobile keyboard. Instead `reconcileIds()` carries ids across — lanes keep theirs only if the whole sequence of lane titles is unchanged, and a lane's cards (or the archive's) only if that whole sequence is unchanged — and if the lanes matched, the new board is assigned into the mounted component, whose keyed `{#each}` blocks then keep every unchanged lane and card. Nothing is matched by similarity, and ids never reach the Markdown, so this decides which components survive, never what is saved. It remounts instead when the lanes differ, a SortableJS drag is in progress (`Sortable.dragged`/`active`), or a file is being opened (`clear`).
+
+   Either way the board must not act on objects it no longer shows: an external update hides any open card menu and the undo toast (both close over the previous board's objects), and `onChange` ignores a component that has been replaced — removing a focused input blurs it, which would otherwise commit the old board over the change. Any input text the update or a teardown destroyed is handed back in a Notice that only its Dismiss button closes.
 
 ## Libraries
 
@@ -141,11 +150,11 @@ npm run test:coverage
 npx vitest run tests/parser.test.ts
 ```
 
-The test suite has 304 tests across 9 files. All tests run in jsdom with mocked Obsidian API and SortableJS.
+The test suite has 340 tests across 10 files. All tests run in jsdom with mocked Obsidian API and SortableJS.
 
 ### E2E tests
 
-E2E tests drive a live Obsidian instance via the [Obsidian CLI](https://obsidian.md/help/Extending+Obsidian/Obsidian+CLI) (requires Obsidian 1.12+). They verify that the plugin loads, renders boards, round-trips file content, and handles drag-and-drop, context-menu actions, the archive flow, and undo toasts inside the real app.
+E2E tests drive a live Obsidian instance via the [Obsidian CLI](https://obsidian.md/help/Extending+Obsidian/Obsidian+CLI) (requires Obsidian 1.12+). They verify that the plugin loads, renders boards, round-trips file content, and handles drag-and-drop, context-menu actions, the archive flow, undo toasts, and external changes to an open board inside the real app.
 
 The test vault is committed to the repo at `tests/e2e/minimalist-kanban-vault/` (only per-machine state — `workspace*.json`, `graph.json`, and the `plugins/` symlink — is gitignored). Its directory basename is the vault name the CLI addresses.
 

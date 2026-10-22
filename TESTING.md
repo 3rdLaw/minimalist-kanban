@@ -103,7 +103,10 @@ Both `link suggest:` tests were flaking on exactly this. They now poll via
 
 `test()` runs `resetUiState()` in a `finally` — on pass as well as failure —
 dismissing open editors (`.kb-item-edit`, `.kb-lane-title-input`,
-`.kb-add-item-input`) and any leftover Obsidian `.menu`.
+`.kb-add-item-input`) and any leftover Obsidian `.menu`. It also empties every
+add-card box and dismisses draft notices (`.kb-draft-dismiss`): unsent text left
+in a box is rescued into a Notice when the next test's `createNote()` replaces
+the file under the open view, and that notice then broke a later test's count.
 
 This is what the observed cascade needed: a link-suggest test threw before its
 closing Escape, leaving the card editor open, and the *next* test's wait for
@@ -178,6 +181,13 @@ so whatever the last run left there silently decided how the next run behaved.
 now restores the value it actually found rather than assuming `!value` (which
 flipped an already-true setting to false, permanently, for that machine).
 
+Emulated mobile has the same trap in `workspace-mobile.json`, also untracked: it
+is a separate saved layout, restored on every `emulateMobile(true)`. A mobile
+test that leaves a board open there decides what the next run's mobile tests
+open, so both mobile tests use the shared test board (`createBoard()`), which
+every run recreates. Leaving the actions board there — which the end-of-run
+sweep deletes — made the next run's mobile view open a missing file.
+
 ### 10. Sweep created files at end of run, not only inline
 
 Setup overwrites (`createNote()` deletes before creating), so a leftover file
@@ -233,7 +243,7 @@ E2E="link suggest" npm run test:e2e
 Case-insensitive substring of the test name. Everything else is skipped and the
 summary reports the skip count. The full run is ~3 minutes; one test is seconds.
 
-**Every test passes on its own.** All 23 were verified individually, not
+**Every test passes on its own.** All 28 were verified individually, not
 inferred — if one only passes as part of a full run, that is a bug in the test.
 
 ## Every test sets up its own state

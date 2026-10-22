@@ -39,7 +39,7 @@ npm test
 npx vitest run tests/parser.test.ts
 ```
 
-304 tests across 9 files (parser, parser properties, item, lane, board, link-suggest, main, kanban-view, settings). All run in jsdom with mocked Obsidian API and SortableJS.
+340 tests across 10 files (parser, parser properties, reconcile, item, lane, board, link-suggest, main, kanban-view, settings). All run in jsdom with mocked Obsidian API and SortableJS.
 
 ## E2E tests
 

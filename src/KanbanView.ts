@@ -173,11 +173,10 @@ export class KanbanView extends TextFileView {
     const lost = drafts.filter((d) => !this.contentEl.contains(d.el));
     if (lost.length === 0) return;
 
-    const notice = new Notice("", 0);
-    // `messageEl` only exists from Obsidian 1.8.7; minAppVersion is older.
-    const el = notice.noticeEl;
-    el.replaceChildren();
-    el.classList.add("kb-draft-notice");
+    // Built as a fragment rather than by filling `noticeEl`, which is
+    // deprecated, while its replacement `messageEl` needs Obsidian 1.8.7.
+    const fragment = createFragment();
+    const el = fragment.createDiv({ cls: "kb-draft-notice" });
     // Obsidian hides a notice on any click inside it; this one must survive
     // selecting its text or a stray tap. (Swipe-to-dismiss on phones remains.)
     el.addEventListener("click", (e) => e.stopPropagation());
@@ -196,6 +195,7 @@ export class KanbanView extends TextFileView {
     }
     const dismiss = el.createEl("button", { cls: "kb-draft-dismiss" });
     dismiss.textContent = "Dismiss";
+    const notice = new Notice(fragment, 0);
     dismiss.addEventListener("click", () => notice.hide());
   }
 

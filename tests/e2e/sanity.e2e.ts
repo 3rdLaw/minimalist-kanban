@@ -1436,6 +1436,14 @@ test("external change: a lane rename remounts and hands back the half-typed card
     waitForDom(".kb-draft-notice", "1", 5000);
     const text = domTextAll(".kb-draft-notice");
     assert.ok(text.includes("New card in Two: half-typed"), `Unexpected notice: ${text}`);
+
+    // Obsidian hides a notice on any click inside it; this one holds the only
+    // copy of the text, so a click on the text must leave it up.
+    evaluate("document.querySelector('.kb-draft-row span').click()");
+    sleep(500);
+    assert.equal(domTotal(".kb-draft-notice"), "1", "A click on the rescued text dismissed the notice");
+    evaluate("document.querySelector('.kb-draft-dismiss').click()");
+    waitFor('dev:dom selector=".kb-draft-notice" total', (o) => !o.includes("1"), 3000);
   } finally {
     // The notice stays until dismissed; do not leave it for later tests.
     evaluate("document.querySelectorAll('.kb-draft-dismiss').forEach(b => b.click())");

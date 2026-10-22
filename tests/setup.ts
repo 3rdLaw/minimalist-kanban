@@ -26,8 +26,16 @@ if (!HTMLElement.prototype.addClass) {
     this.classList.add(...classes);
   };
 }
-if (!(HTMLElement.prototype as any).createEl) {
-  (HTMLElement.prototype as any).createEl = function (
+if (!(globalThis as any).createFragment) {
+  (globalThis as any).createFragment = (callback?: (el: DocumentFragment) => void) => {
+    const fragment = document.createDocumentFragment();
+    callback?.(fragment);
+    return fragment;
+  };
+}
+// On Node, as in Obsidian, so DocumentFragments get them too.
+if (!(Node.prototype as any).createEl) {
+  (Node.prototype as any).createEl = function (
     tag: string,
     options?: { cls?: string; attr?: Record<string, string | number> }
   ) {
@@ -43,8 +51,8 @@ if (!(HTMLElement.prototype as any).createEl) {
   };
 }
 for (const [name, tag] of [["createDiv", "div"], ["createSpan", "span"]] as const) {
-  if (!(HTMLElement.prototype as any)[name]) {
-    (HTMLElement.prototype as any)[name] = function (this: any, options?: unknown) {
+  if (!(Node.prototype as any)[name]) {
+    (Node.prototype as any)[name] = function (this: any, options?: unknown) {
       return this.createEl(tag, options);
     };
   }
