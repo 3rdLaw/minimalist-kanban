@@ -307,8 +307,7 @@ describe("Board card menu", () => {
 // ── New note from card: filename sanitization ──────────
 
 describe("newNoteFromCard filename sanitization", () => {
-  async function triggerNewNote(cardTitle: string, filePath = "Kanban.md") {
-    const app = makeApp();
+  async function triggerNewNote(cardTitle: string, filePath = "Kanban.md", app = makeApp()) {
     const onChange = vi.fn();
     const { container } = render(Board, {
       props: {
@@ -336,12 +335,46 @@ describe("newNoteFromCard filename sanitization", () => {
     const menu = Menu.instances[before];
     await menu.findItem("New note from card")!._onClick!();
     await new Promise((r) => setTimeout(r, 10));
-    return app;
+    return Object.assign(app, { onChange });
   }
 
   test("uses only the first line of a multi-line title", async () => {
     const app = await triggerNewNote("First line\nSecond line");
     expect(app.vault.create.mock.calls[0][0]).toBe("First line.md");
+  });
+
+  test("moves the full card text into the note", async () => {
+    const app = await triggerNewNote("Meeting #work\nImportant [[details]]");
+    expect(app.vault.create).toHaveBeenCalledWith(
+      "Meeting work.md",
+      "Meeting #work\nImportant [[details]]"
+    );
+    const board = app.onChange.mock.calls[0][0] as BoardType;
+    expect(board.lanes[0].items[0].title).toBe("[[New Note]]");
+  });
+
+  test("starts the note empty when the card is just its name", async () => {
+    const app = await triggerNewNote("  Plain card ");
+    expect(app.vault.create).toHaveBeenCalledWith("Plain card.md", "");
+  });
+
+  test("removes characters that break Obsidian links", async () => {
+    const app = await triggerNewNote("[draft] C# plan ^v2");
+    expect(app.vault.create.mock.calls[0][0]).toBe("draft C plan v2.md");
+  });
+
+  test("reports a failed create and leaves the card alone", async () => {
+    const app = makeApp();
+    app.vault.create = vi.fn().mockRejectedValue(new Error("File name is too long"));
+    const before = Notice.instances.length;
+    const { onChange } = await triggerNewNote("Doomed card", "Kanban.md", app);
+
+    expect(app.workspace.getLeaf).not.toHaveBeenCalled();
+    expect(onChange).not.toHaveBeenCalled();
+    expect(Notice.instances.length).toBe(before + 1);
+    expect(Notice.instances[before].noticeEl.textContent).toBe(
+      "Couldn't create Doomed card.md: File name is too long"
+    );
   });
 
   test("extracts text from wikilinks", async () => {

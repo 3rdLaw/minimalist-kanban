@@ -511,6 +511,7 @@
       .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // md links
       .replace(/#(\w+)/g, "$1") // tags
       .replace(/[\\/:*?"<>|]/g, "") // illegal chars
+      .replace(/[#^[\]]/g, "") // chars that break Obsidian links
       .replace(/\s+/g, " ")
       .trim();
     if (!name) name = "Untitled";
@@ -526,8 +527,18 @@
       n++;
     }
 
+    // The card becomes a link, so the note keeps everything the filename
+    // couldn't: further lines, tags, links. A card that is just the name adds
+    // nothing, so its note starts empty.
     const originalTitle = item.title;
-    const newFile = await app.vault.create(fullPath, "");
+    const body = originalTitle.trim() === name ? "" : originalTitle;
+    let newFile;
+    try {
+      newFile = await app.vault.create(fullPath, body);
+    } catch (err) {
+      new Notice(`Couldn't create ${fullPath}: ${err instanceof Error ? err.message : err}`);
+      return;
+    }
 
     // Open in new pane
     const leaf = app.workspace.getLeaf("split");
