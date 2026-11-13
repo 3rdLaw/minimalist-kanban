@@ -99,6 +99,7 @@
   }
 
   function handleTitleKeydown(e) {
+    if (e.isComposing) return;
     if (e.key === "Enter") titleInput?.blur();
     else if (e.key === "Escape") editingTitle = false;
   }

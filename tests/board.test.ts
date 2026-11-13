@@ -903,6 +903,21 @@ describe("Lane title editing", () => {
     expect(container.querySelector(".kb-lane-title-input")).toBeNull();
   });
 
+  test("Enter and Escape during IME composition keep the editor open", async () => {
+    const { container, onChange } = renderBoard();
+    await fireEvent.click(container.querySelector(".kb-lane-title")!);
+    await new Promise((r) => setTimeout(r, 10));
+
+    const input = container.querySelector(".kb-lane-title-input")! as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: "日本語" } });
+    await fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+    await fireEvent.keyDown(input, { key: "Escape", isComposing: true });
+
+    expect(container.querySelector(".kb-lane-title-input")).toBe(input);
+    expect(document.activeElement).toBe(input);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   test("Escape after typing does not mutate lane.title", async () => {
     const board = makeBoard();
     const originalTitle = board.lanes[0].title;
