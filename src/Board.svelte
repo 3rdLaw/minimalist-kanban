@@ -15,6 +15,10 @@
 
   let boardEl;
   let laneSortable;
+  // Sortable joins every list with the same group name, across all open
+  // boards. A card dropped on another board can't be moved there (handleItemMove
+  // only knows this board's lanes) and snaps back, so don't offer the drop.
+  const dragGroup = `kb-items-${generateId()}`;
   let undoNotice = null;
   let undoSubjectId = null;
   // Card and archive menus close over the lane and card objects they were
@@ -569,6 +573,7 @@
       {filePath}
       laneIndex={i}
       laneCount={board.lanes.length}
+      {dragGroup}
       onItemMove={handleItemMove}
       onLaneDelete={handleLaneDelete}
       onLaneRename={handleLaneRename}

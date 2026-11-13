@@ -13,6 +13,8 @@
   export let filePath;
   export let laneIndex;
   export let laneCount;
+  /** Sortable group shared by this board's lanes and no other board's. */
+  export let dragGroup = "kb-items";
   /** @type {(detail: any) => void} */
   export let onItemMove = () => {};
   /** @type {(detail: any) => void} */
@@ -40,7 +42,7 @@
 
   onMount(() => {
     sortableInstance = new Sortable(itemsEl, {
-      group: "kb-items",
+      group: dragGroup,
       animation: 150,
       draggable: ".kb-item",
       filter: ".kb-menu-btn",

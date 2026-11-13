@@ -648,7 +648,7 @@ describe("Board drag and drop", () => {
     renderBoard();
 
     const itemSortables = SortableMock.instances.filter(
-      (s) => s.options.group === "kb-items"
+      (s) => s.options.draggable === ".kb-item"
     );
     expect(itemSortables.length).toBeGreaterThan(0);
     itemSortables.forEach((s) => {
@@ -661,12 +661,26 @@ describe("Board drag and drop", () => {
     renderBoard();
 
     const itemSortables = SortableMock.instances.filter(
-      (s) => s.options.group === "kb-items"
+      (s) => s.options.draggable === ".kb-item"
     );
     itemSortables.forEach((s) => {
       expect(s.options.delay).toBe(150);
       expect(s.options.delayOnTouchOnly).toBe(true);
     });
+  });
+
+  test("each board's lists share a drag group that no other board joins", () => {
+    const before = SortableMock.instances.length;
+    renderBoard();
+    const first = SortableMock.instances.slice(before).filter((s) => s.options.draggable === ".kb-item");
+    const mid = SortableMock.instances.length;
+    renderBoard();
+    const second = SortableMock.instances.slice(mid).filter((s) => s.options.draggable === ".kb-item");
+
+    expect(first.length).toBeGreaterThan(1);
+    expect(new Set(first.map((s) => s.options.group)).size).toBe(1);
+    expect(new Set(second.map((s) => s.options.group)).size).toBe(1);
+    expect(second[0].options.group).not.toBe(first[0].options.group);
   });
 
   test("board-level SortableJS excludes the archive lane from lane dragging", () => {
