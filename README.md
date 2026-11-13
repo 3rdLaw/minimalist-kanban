@@ -89,7 +89,7 @@ npm run lint      # ESLint + svelte-check + e2e typecheck
 npm run test:e2e  # Run e2e tests (requires Obsidian 1.12+ with CLI)
 ```
 
-See [TESTING.md](TESTING.md) before touching the e2e suite. It documents the
+See [TESTING.md](docs/TESTING.md) before touching the e2e suite. It documents the
 flake patterns that keep it stable, several of which are counter-intuitive —
 notably that the `obsidian` CLI reports every error at exit code 0, so a failed
 command is indistinguishable from a successful one unless you read its output.

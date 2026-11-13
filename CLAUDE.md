@@ -11,15 +11,15 @@ Markdown file is the source of truth for every board.
 ## Read first
 
 - [README.md](README.md): what the plugin does, the board file format, settings.
-- [ARCHITECTURE.md](ARCHITECTURE.md): data flow, file overview, and the
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md): data flow, file overview, and the
   numbered design constraints. Read the constraints before changing how the
   board renders, saves, or reacts to external changes.
-- [TESTING.md](TESTING.md): the e2e harness and its flake patterns. Read it
+- [TESTING.md](docs/TESTING.md): the e2e harness and its flake patterns. Read it
   before touching `tests/e2e/`; several rules are counter-intuitive (the
   `obsidian` CLI reports every error at exit code 0).
-- [MOBILE.md](MOBILE.md): Android keyboard and phone layout. Read it before
+- [MOBILE.md](docs/MOBILE.md): Android keyboard and phone layout. Read it before
   changing layout CSS or anything that positions UI on mobile.
-- [PUBLISHING.md](PUBLISHING.md): lint expectations, version bump, and release.
+- [PUBLISHING.md](docs/PUBLISHING.md): lint expectations, version bump, and release.
 
 ## Commands
 

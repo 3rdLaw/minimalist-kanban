@@ -65,7 +65,7 @@ export default defineConfig([
       // would silently break that.
       //
       // Revisit together with a minAppVersion bump; see the note in
-      // PUBLISHING.md.
+      // docs/PUBLISHING.md.
       "obsidianmd/settings-tab/prefer-setting-definitions": "off",
     },
   },
