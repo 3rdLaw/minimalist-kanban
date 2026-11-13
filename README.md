@@ -50,8 +50,8 @@ kanban-plugin: board
 - **Wikilinks and Markdown links** render as clickable links in card titles
 - **Ctrl/Cmd+Click** a link in a card to open it in a new tab
 - **Toggle view** — switch between the Kanban board and the raw Markdown editor (`Ctrl/Cmd + P` → **Toggle Kanban/Markdown view**)
-- **Card context menu** — right-click or tap the `⋮` button on a card to duplicate, move, archive, or delete it
-- **Create notes from cards** — turn a card into a linked note via the context menu
+- **Card menu** — click or tap the `⋮` button on a card to duplicate, move, archive, or delete it
+- **Create notes from cards** — turn a card into a linked note from the card menu
 - **Archive** — archive cards to move them out of the board without deleting them
 - **Checkboxes** — cards are stored with `- [ ]`/`- [x]` syntax, compatible with Obsidian Tasks and Dataview. Optionally display checkboxes in the UI via Settings.
 - **Mobile support** — touch-friendly drag-and-drop and always-visible menu buttons
@@ -65,8 +65,8 @@ Minimalist Kanban reads the same `kanban-plugin: board` frontmatter and Markdown
 3. Open your existing board files — they should render automatically
 
 A few things to note:
-- Old plugin metadata blocks (`%% kanban:settings %%`) are preserved in the file but ignored. They will be removed if you edit and save the board.
-- Date/time card metadata and lane-level settings are not supported and will be dropped on save.
+- Old plugin metadata blocks (`%% kanban:settings %%`) are preserved in the file but ignored.
+- Date and time metadata on cards (`@{…}`) isn't supported. It stays in the card's text and shows as written. Lane markers such as `**Complete**` stay in the file but have no effect.
 - All cards are stored with checkbox syntax (`- [ ]`/`- [x]`) for compatibility with Obsidian Tasks.
 
 ## Settings
