@@ -126,6 +126,13 @@
   background: var(--background-modifier-hover);
 }
 
+/* Keyboard focus never comes with a hover, so the button has to show itself
+   or tabbing lands on an invisible control. */
+.kb-menu-btn:focus-visible {
+  opacity: 1 !important;
+  box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
+}
+
 /* Lane items container */
 
 .kb-lane-items {
