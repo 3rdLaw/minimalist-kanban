@@ -372,6 +372,56 @@ describe("LinkSuggest", () => {
       expect(suggest.isShowing).toBe(false);
     });
 
+    test("closes when the textarea loses focus", () => {
+      ({ textarea, suggest } = setup());
+      typeInto(textarea, "[[");
+      expect(suggest.isShowing).toBe(true);
+
+      textarea.dispatchEvent(new FocusEvent("blur"));
+      expect(suggest.isShowing).toBe(false);
+    });
+
+    test("choosing a suggestion with the pointer keeps the textarea focused", () => {
+      ({ textarea, suggest } = setup());
+      textarea.focus();
+      typeInto(textarea, "[[Proj");
+
+      const item = document.querySelector(".kb-link-suggest .suggestion-item")!;
+      const down = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
+      item.dispatchEvent(down);
+
+      expect(down.defaultPrevented).toBe(true);
+      expect(textarea.value).toBe("[[Project Plan]]");
+    });
+
+    test("follows the textarea when the board scrolls", () => {
+      ({ textarea, suggest } = setup());
+      let left = 10;
+      textarea.getBoundingClientRect = () =>
+        ({ left, top: 0, bottom: 20, width: 100 }) as DOMRect;
+      typeInto(textarea, "[[");
+      const popup = document.querySelector<HTMLElement>(".kb-link-suggest")!;
+      expect(popup.style.getPropertyValue("--kb-suggest-left")).toBe("10px");
+
+      left = 300;
+      const scroller = document.createElement("div");
+      document.body.appendChild(scroller);
+      scroller.dispatchEvent(new Event("scroll"));
+      expect(popup.style.getPropertyValue("--kb-suggest-left")).toBe("300px");
+      scroller.remove();
+    });
+
+    test("detach removes its document and window listeners", () => {
+      ({ textarea, suggest } = setup());
+      const docRemove = vi.spyOn(document, "removeEventListener");
+      const winRemove = vi.spyOn(window, "removeEventListener");
+      suggest.detach();
+      expect(docRemove).toHaveBeenCalledWith("scroll", expect.any(Function), true);
+      expect(winRemove).toHaveBeenCalledWith("resize", expect.any(Function));
+      docRemove.mockRestore();
+      winRemove.mockRestore();
+    });
+
     test("close hides popup but keeps DOM element", () => {
       ({ textarea, suggest } = setup());
       typeInto(textarea, "[[");

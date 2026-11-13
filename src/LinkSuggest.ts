@@ -23,6 +23,8 @@ export class LinkSuggest {
   isShowing = false;
 
   private boundOnInput: () => void;
+  private boundClose: () => void;
+  private boundReposition: () => void;
 
   constructor(app: App, sourcePath: string) {
     this.app = app;
@@ -31,6 +33,10 @@ export class LinkSuggest {
     this.containerEl = LinkSuggest.createContainer(document);
 
     this.boundOnInput = () => this.onInput();
+    this.boundClose = () => this.close();
+    this.boundReposition = () => {
+      if (this.isShowing) this.position();
+    };
   }
 
   private static createContainer(doc: Document): HTMLDivElement {
@@ -61,12 +67,23 @@ export class LinkSuggest {
       this.containerEl = LinkSuggest.createContainer(doc);
     }
     textarea.addEventListener("input", this.boundOnInput);
+    // Choosing a suggestion with the pointer keeps focus in the textarea (the
+    // items cancel mousedown), so a blur always means focus went elsewhere.
+    textarea.addEventListener("blur", this.boundClose);
+    // The popup is fixed to coordinates taken from the textarea, so follow it
+    // when the board or the window moves underneath. Scroll doesn't bubble;
+    // capture sees the board's own scrolling containers too.
+    doc.addEventListener("scroll", this.boundReposition, true);
+    this.win.addEventListener("resize", this.boundReposition);
     doc.body.appendChild(this.containerEl);
   }
 
   detach(): void {
     if (this.textarea) {
       this.textarea.removeEventListener("input", this.boundOnInput);
+      this.textarea.removeEventListener("blur", this.boundClose);
+      this.doc.removeEventListener("scroll", this.boundReposition, true);
+      this.win.removeEventListener("resize", this.boundReposition);
       this.textarea = null;
     }
     this.close();
