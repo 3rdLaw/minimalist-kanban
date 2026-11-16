@@ -30,7 +30,7 @@ export class LinkSuggest {
     this.app = app;
     this.sourcePath = sourcePath;
 
-    this.containerEl = LinkSuggest.createContainer(document);
+    this.containerEl = LinkSuggest.createContainer(activeDocument);
 
     this.boundOnInput = () => this.onInput();
     this.boundClose = () => this.close();
@@ -52,7 +52,7 @@ export class LinkSuggest {
    * body it attaches to, the viewport it measures — comes from the textarea.
    */
   private get doc(): Document {
-    return this.textarea?.ownerDocument ?? document;
+    return this.textarea?.ownerDocument ?? activeDocument;
   }
 
   private get win(): Window {

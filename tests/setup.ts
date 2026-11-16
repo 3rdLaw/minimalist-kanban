@@ -33,6 +33,11 @@ if (!(globalThis as any).createFragment) {
     return fragment;
   };
 }
+// Obsidian's global for the focused window's document. jsdom has a single
+// window, so it is the same object as `document`.
+if (!("activeDocument" in globalThis)) {
+  Object.defineProperty(globalThis, "activeDocument", { get: () => document, configurable: true });
+}
 // On Node, as in Obsidian, so DocumentFragments get them too.
 if (!(Node.prototype as any).createEl) {
   (Node.prototype as any).createEl = function (

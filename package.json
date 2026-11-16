@@ -17,8 +17,6 @@
     "test:e2e": "npx tsx tests/e2e/sanity.e2e.ts"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.5",
-    "@eslint/json": "^0.14.0",
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/svelte": "^5.4.2",
@@ -29,7 +27,7 @@
     "esbuild": "^0.28.2",
     "esbuild-svelte": "^0.9.5",
     "eslint": "^10.13.0",
-    "eslint-plugin-obsidianmd": "^0.4.2",
+    "eslint-plugin-obsidianmd": "^0.6.0",
     "globals": "^17.13.0",
     "jsdom": "^31.0.1",
     "obsidian": "^1.14.4",
@@ -43,8 +41,5 @@
   "dependencies": {
     "monkey-around": "^3.0.0",
     "sortablejs": "^1.15.0"
-  },
-  "overrides": {
-    "moment@<2.31.0": "2.31.0"
   }
 }
