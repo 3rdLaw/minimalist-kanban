@@ -100,6 +100,6 @@ isn't available, say so and don't report the e2e suite as passing.
   `manifest.json`.
 - The release flow is in PUBLISHING.md: `npm version --no-git-tag-version
   <patch|minor|major>`, `npm run build`, `npm run lint && npm test && npm
-  audit`, then a GitHub release with `main.js`, `manifest.json` and
-  `styles.css` attached. Tagging, pushing, and publishing releases are the
+  audit`, then the release commit, a tag and a push. There are no GitHub
+  releases any more (the last was 0.6.0). Tagging and pushing are the
   maintainer's call; don't do them unless asked.

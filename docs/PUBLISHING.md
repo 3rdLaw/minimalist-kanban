@@ -88,14 +88,12 @@ npm run test:e2e
 
    Review any audit findings. Dev-only vulnerabilities (in test tooling, build tools) are lower risk but production dependencies should be clean.
 
-4. Commit the version bump and push.
+4. Commit the version bump as `<version> - <summary>`, then tag that commit with the version from `manifest.json`, with no `v` prefix:
 
-5. Create a GitHub release:
-   - Set the **tag** to match the version in `manifest.json` (e.g. `0.3.0`).
-   - Give the release a name and description.
-   - Attach these files as binary assets:
-     - `main.js`
-     - `manifest.json`
-     - `styles.css`
+   ```bash
+   git tag 0.11.4
+   ```
 
-Obsidian's community plugin infrastructure picks up the release automatically once the tag and manifest version match.
+5. Push the branch and the tag to every remote.
+
+A release ends there. This repo no longer publishes GitHub releases; the last one was 0.6.0, before Obsidian changed its plugin release process. The tag and the version in `manifest.json` and `versions.json` are the record of each release. `main.js` is gitignored, so build it from the tag (`npm ci && npm run build`) whenever a bundle is needed.
